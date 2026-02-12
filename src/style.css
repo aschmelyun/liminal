@@ -1,0 +1,83 @@
+@import "tailwindcss";
+
+@utility loader-spin {
+    animation: spin 0.8s linear infinite;
+}
+
+/* CodeMirror fills its container */
+.editor-container .cm-editor {
+    height: 100%;
+}
+
+.editor-container .cm-scroller {
+    overflow: auto;
+}
+
+@media (max-width: 767px) {
+    .editor-container .cm-content {
+        font-size: 12px;
+    }
+}
+
+/* Agent panel message styles */
+.agent-msg-user {
+    border-left: 3px solid #a8a29e;
+    padding-left: 0.75rem;
+    margin-bottom: 0.75rem;
+    color: #44403c;
+}
+
+.agent-msg-assistant {
+    margin-bottom: 0.75rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.7;
+    font-family: system-ui, -apple-system, sans-serif;
+}
+
+.agent-msg-assistant pre {
+    background: #1e1e1e;
+    color: #d4d4d4;
+    padding: 0.75rem;
+    border-radius: 0.375rem;
+    overflow-x: auto;
+    white-space: pre;
+    margin: 0.5rem 0;
+    font-size: 0.8125rem;
+}
+
+.agent-msg-assistant code:not(pre code) {
+    background: #f5f5f4;
+    padding: 0.125rem 0.375rem;
+    border-radius: 0.25rem;
+    font-size: 0.8125rem;
+}
+
+.agent-msg-tool {
+    margin-bottom: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background: #fafaf9;
+    border: 1px solid #e7e5e4;
+    border-radius: 0.375rem;
+    font-size: 0.75rem;
+    color: #78716c;
+}
+
+.agent-msg-tool .tool-name {
+    font-weight: 600;
+    color: #57534e;
+}
+
+/* Extra bottom padding for Safari's floating address bar */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+    .panel-terminal-input,
+    .panel-agent-input {
+        padding-bottom: calc(2rem + env(safe-area-inset-bottom, 0px));
+    }
+    @media (min-width: 768px) {
+        .panel-terminal-input,
+        .panel-agent-input {
+            padding-bottom: 0.75rem;
+        }
+    }
+}
