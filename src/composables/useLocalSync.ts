@@ -118,39 +118,76 @@ async function removeLocalEntry(
 }
 
 async function initialSync(): Promise<void> {
-  const { collectVfsPaths, readFileAsBuffer } = usePhp()
+  const { collectVfsPaths, readFileAsBuffer, writeFile, fileExists, mkdir } = usePhp()
 
   syncState.value = 'syncing-initial'
-  syncStatus.value = 'Collecting files...'
+  syncStatus.value = 'Scanning local folder...'
   syncProgress.value = 0
 
-  const allPaths = collectVfsPaths('/app')
-  const filtered = allPaths
+  // Collect both sides
+  const localFiles = await collectLocalPaths(directoryHandle!)
+  const vfsPaths = collectVfsPaths('/app')
     .map((p) => p.replace(/^\/app\//, ''))
     .filter((p) => !shouldSkip(p))
 
-  const total = filtered.length
+  const localFiltered = localFiles.filter((f) => !shouldSkip(f.path))
+  const localPathSet = new Set(localFiltered.map((f) => f.path))
+
+  const total = localFiltered.length + vfsPaths.filter((p) => !localPathSet.has(p)).length
   let done = 0
 
-  for (const rel of filtered) {
+  // Phase 1: Local → VFS (local files win for any overlap)
+  syncStatus.value = 'Importing local files...'
+  for (const { path: rel, lastModified } of localFiltered) {
+    try {
+      const { content } = await readLocalFile(directoryHandle!, rel)
+      const hash = fnv1a(content)
+
+      // Write local file into VFS
+      const vfsPath = `/app/${rel}`
+      const parts = vfsPath.split('/').slice(1, -1)
+      let dir = ''
+      for (const part of parts) {
+        dir += '/' + part
+        if (!fileExists(dir)) mkdir(dir)
+      }
+      writeFile(vfsPath, content)
+
+      vfsSnapshot.set(rel, hash)
+      localSnapshot.set(rel, lastModified)
+    } catch (err) {
+      console.warn(`[local-sync] Failed to import ${rel}:`, err)
+    }
+
+    done++
+    if (done % 20 === 0 || done === total) {
+      syncProgress.value = done / total
+      syncStatus.value = `Importing local files... (${done}/${total})`
+    }
+  }
+
+  // Phase 2: VFS → Local (only files that don't exist locally)
+  syncStatus.value = 'Downloading remaining files...'
+  for (const rel of vfsPaths) {
+    if (localPathSet.has(rel)) continue // already handled — local version won
+
     try {
       const content = readFileAsBuffer(`/app/${rel}`)
       await writeLocalFile(directoryHandle!, rel, content)
 
-      vfsSnapshot.set(rel, fnv1a(content))
+      const hash = fnv1a(content)
+      vfsSnapshot.set(rel, hash)
 
-      // Read back the lastModified from the file we just wrote
       const { lastModified } = await readLocalFile(directoryHandle!, rel)
       localSnapshot.set(rel, lastModified)
     } catch (err) {
-      // Per-file failure — continue with the rest
       console.warn(`[local-sync] Failed to write ${rel}:`, err)
     }
 
     done++
     if (done % 20 === 0 || done === total) {
       syncProgress.value = done / total
-      syncStatus.value = `Writing files... (${done}/${total})`
+      syncStatus.value = `Downloading remaining files... (${done}/${total})`
     }
   }
 
