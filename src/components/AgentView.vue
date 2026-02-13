@@ -416,7 +416,12 @@ async function agentLoop() {
     }
 
     if (agentMessages.length > 20) {
-      agentMessages = agentMessages.slice(-16)
+      // Find a safe cut point — never split a tool_calls/tool pair
+      let cut = agentMessages.length - 16
+      while (cut < agentMessages.length && agentMessages[cut]!.role === 'tool') {
+        cut++
+      }
+      agentMessages = agentMessages.slice(cut)
     }
   }
 }
