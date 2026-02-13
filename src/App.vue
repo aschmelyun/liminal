@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { usePhp } from './composables/usePhp'
+import { useShareUrl } from './composables/useShareUrl'
 import LoadingOverlay from './components/LoadingOverlay.vue'
 import AppHeader from './components/AppHeader.vue'
 import TabBar from './components/TabBar.vue'
@@ -15,10 +16,14 @@ const loading = ref(true)
 const loadingFailed = ref(false)
 
 const { boot, booted, bootProgress, bootStatus } = usePhp()
+const { captureFromUrl, applyPendingPayload } = useShareUrl()
+
+const hasSharePayload = captureFromUrl()
 
 onMounted(async () => {
   try {
     await boot()
+    if (hasSharePayload) await applyPendingPayload()
     setTimeout(() => {
       loading.value = false
     }, 400)

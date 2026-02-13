@@ -2,12 +2,14 @@ import { ref, shallowRef } from 'vue'
 import { PHP, loadPHPRuntime } from '@php-wasm/universal'
 import { getPHPLoaderModule } from '@php-wasm/web-8-4'
 import JSZip from 'jszip'
+import { fnv1a } from '../utils/hash'
 
 const php = shallowRef<PHP | null>(null)
 const booted = ref(false)
 const bootProgress = ref(0)
 const bootStatus = ref('Loading PHP runtime...')
 const vfsVersion = ref(0)
+const initialHashes = new Map<string, number>()
 
 export function usePhp() {
   async function boot() {
@@ -42,6 +44,7 @@ export function usePhp() {
       }
 
       php.value!.writeFile(vfsPath, content)
+      initialHashes.set(path, fnv1a(content))
       loaded++
       if (loaded % 50 === 0 || loaded === files.length) {
         setStatus(`Extracting files... (${loaded}/${files.length})`, 0.15 + (loaded / files.length) * 0.70)
@@ -165,6 +168,7 @@ export function usePhp() {
     bootProgress,
     bootStatus,
     vfsVersion,
+    initialHashes,
     boot,
     navigateTo,
     runArtisan,

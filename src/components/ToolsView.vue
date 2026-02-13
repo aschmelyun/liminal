@@ -2,10 +2,12 @@
 import { ref, watch } from 'vue'
 import { usePhp } from '../composables/usePhp'
 import { useLocalSync } from '../composables/useLocalSync'
+import { useShareUrl } from '../composables/useShareUrl'
 import JSZip from 'jszip'
 
 const { php, booted, writeFile, readFileAsBuffer, fileExists, mkdir, collectVfsPaths } = usePhp()
 const { syncState, syncStatus, syncError, syncProgress, isSupported, connect, disconnect } = useLocalSync()
+const { sharing, shareStatus, shareError, generateShareUrl } = useShareUrl()
 
 interface PhpEnvironment {
   version: string
@@ -279,6 +281,27 @@ function triggerDownload(blob: Blob, filename: string) {
 
           <!-- Error -->
           <p v-if="importError" class="text-xs text-red-600">{{ importError }}</p>
+        </div>
+      </section>
+
+      <!-- Share -->
+      <section>
+        <h2 class="text-sm font-semibold uppercase tracking-wider text-stone-500 mb-3">Share</h2>
+        <div class="bg-white border border-stone-200 rounded-lg p-4 space-y-3">
+          <p class="text-sm text-stone-500">
+            Generate a shareable URL containing your file changes. The URL encodes a diff against the base Laravel app — anyone who opens it will see your modifications applied automatically.
+          </p>
+          <button
+            :disabled="sharing"
+            class="px-4 py-2 text-sm font-medium text-white bg-rose-500 rounded-md
+                   hover:bg-rose-600 disabled:opacity-50 disabled:cursor-not-allowed
+                   cursor-pointer"
+            @click="generateShareUrl"
+          >
+            {{ sharing ? 'Generating...' : 'Copy Share URL' }}
+          </button>
+          <p v-if="shareStatus" class="text-xs text-stone-500">{{ shareStatus }}</p>
+          <p v-if="shareError" class="text-xs text-red-600">{{ shareError }}</p>
         </div>
       </section>
 

@@ -1,5 +1,6 @@
 import { ref, watch } from 'vue'
 import { usePhp } from './usePhp'
+import { fnv1a } from '../utils/hash'
 
 type SyncState = 'disconnected' | 'syncing-initial' | 'connected' | 'error'
 
@@ -22,15 +23,6 @@ const localSnapshot = new Map<string, number>()
 
 const isSupported = typeof window.showDirectoryPicker === 'function'
 
-// FNV-1a hash — fast, good distribution for change detection
-function fnv1a(data: Uint8Array): number {
-  let hash = 0x811c9dc5
-  for (let i = 0; i < data.length; i++) {
-    hash ^= data[i]!
-    hash = Math.imul(hash, 0x01000193)
-  }
-  return hash >>> 0
-}
 
 function shouldSkip(relativePath: string): boolean {
   const first = relativePath.split('/')[0]!
