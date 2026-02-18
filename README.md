@@ -28,22 +28,33 @@ Additional features:
 - [CodeMirror 6](https://codemirror.net)
 - [@php-wasm/web-8-4](https://github.com/WordPress/wordpress-playground) — PHP 8.4 compiled to WebAssembly
 
-## Getting Started
+## Running Locally
 
 ```bash
-npm install
-npm run dev
+bun install
 ```
 
-The app boots by fetching `public/app.zip`, extracting a full Laravel 12 project into a virtual filesystem, and bootstrapping Laravel — all in the browser.
-
-## Build
+Before building, make sure Composer dependencies are installed inside the embedded Laravel app:
 
 ```bash
-npm run build
+cd ../liminal/app   # path to the Laravel project
+composer install --no-dev --optimize-autoloader
 ```
 
-The build pipeline runs three steps:
+> **TODO:** automate this step or vendor the dependencies into the repo so a manual `composer install` isn't required.
+
+Then build and preview:
+
+```bash
+bun run build
+bun run preview
+```
+
+`bun run build` bundles the Laravel app into `public/app.zip`, runs type checking, and produces the final static assets. `bun run preview` starts a local web server serving that output — use this rather than `bun run dev` when you need to test the full built artifact (e.g. WASM chunk reassembly).
+
+### Build pipeline
+
+The build runs three steps:
 
 1. **`bundle-app.js`** — zips the Laravel project from `../liminal/app` into `public/app.zip`
 2. **`vue-tsc`** — TypeScript type checking
