@@ -100,54 +100,49 @@ async function importRepo() {
     }
     const repoData = await repoRes.json()
     const branch = repoData.default_branch
+    importProgress.value = 0.05
+
+    // 2. Fetch file tree
+    importStatus.value = 'Fetching file tree...'
+    const treeRes = await fetch(
+      `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/git/trees/${branch}?recursive=1`
+    )
+    if (!treeRes.ok) throw new Error(`Failed to fetch file tree: ${treeRes.status}`)
+    const treeData = await treeRes.json()
     importProgress.value = 0.1
 
-    // 2. Download zipball
-    importStatus.value = 'Downloading repository...'
-    const zipRes = await fetch(
-      `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/zipball/${branch}`
+    const files = treeData.tree.filter(
+      (entry: any) => entry.type === 'blob' && !entry.path.startsWith('vendor/')
     )
-    if (!zipRes.ok) throw new Error(`Failed to download repository: ${zipRes.status}`)
-    const zipData = await zipRes.arrayBuffer()
-    importProgress.value = 0.4
 
-    // 3. Extract and write files to VFS
-    importStatus.value = 'Extracting files...'
-    const zip = await JSZip.loadAsync(zipData)
-    const files = Object.entries(zip.files).filter(([, f]) => !f.dir)
-
-    // GitHub zips have a top-level dir like "owner-repo-sha/"; strip it
-    const firstPath = files[0]?.[0] ?? ''
-    const prefix = firstPath.substring(0, firstPath.indexOf('/') + 1)
-
+    // 3. Download files from raw.githubusercontent.com (CORS-friendly)
+    const CONCURRENCY = 6
     let written = 0
-    for (const [path, file] of files) {
-      const relativePath = path.startsWith(prefix) ? path.slice(prefix.length) : path
-      if (!relativePath) continue
 
-      // Skip vendor — the VFS has its own WASM-compatible vendor tree
-      if (relativePath.startsWith('vendor/')) continue
-
-      const vfsPath = `/app/${relativePath}`
-      const content = await file.async('uint8array')
-
-      // Ensure parent directories exist
-      const parts = vfsPath.split('/').slice(1, -1)
-      let dir = ''
-      for (const part of parts) {
-        dir += '/' + part
-        if (!fileExists(dir)) {
-          mkdir(dir)
+    for (let i = 0; i < files.length; i += CONCURRENCY) {
+      const batch = files.slice(i, i + CONCURRENCY)
+      await Promise.all(batch.map(async (file: any) => {
+        const rawUrl = `https://raw.githubusercontent.com/${parsed!.owner}/${parsed!.repo}/${branch}/${file.path}`
+        const res = await fetch(rawUrl)
+        if (!res.ok) {
+          console.warn(`[import] Failed to download ${file.path}: ${res.status}`)
+          return
         }
-      }
+        const content = new Uint8Array(await res.arrayBuffer())
 
-      writeFile(vfsPath, content)
-      written++
+        const vfsPath = `/app/${file.path}`
+        const parts = vfsPath.split('/').slice(1, -1)
+        let dir = ''
+        for (const part of parts) {
+          dir += '/' + part
+          if (!fileExists(dir)) mkdir(dir)
+        }
+        writeFile(vfsPath, content)
 
-      if (written % 20 === 0 || written === files.length) {
-        importStatus.value = `Writing files... (${written}/${files.length})`
-        importProgress.value = 0.4 + (written / files.length) * 0.6
-      }
+        written++
+        importStatus.value = `Downloading files... (${written}/${files.length})`
+        importProgress.value = 0.1 + (written / files.length) * 0.9
+      }))
     }
 
     importStatus.value = `Imported ${written} files from ${parsed.owner}/${parsed.repo}.`
