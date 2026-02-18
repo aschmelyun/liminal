@@ -3,11 +3,19 @@ import { ref, watch } from 'vue'
 import { usePhp } from '../composables/usePhp'
 import { useLocalSync } from '../composables/useLocalSync'
 import { useShareUrl } from '../composables/useShareUrl'
+import { useTheme, type Theme } from '../composables/useTheme'
 import JSZip from 'jszip'
 
 const { php, booted, writeFile, readFileAsBuffer, fileExists, mkdir, collectVfsPaths } = usePhp()
 const { syncState, syncStatus, syncError, syncProgress, isSupported, connect, disconnect } = useLocalSync()
 const { sharing, shareStatus, shareError, generateShareUrl } = useShareUrl()
+const { theme, setTheme } = useTheme()
+
+const themeOptions: { value: Theme; label: string }[] = [
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
+  { value: 'system', label: 'System' },
+]
 
 interface PhpEnvironment {
   version: string
@@ -229,13 +237,32 @@ function triggerDownload(blob: Blob, filename: string) {
   <div class="flex-1 overflow-y-auto p-6">
     <div class="max-w-2xl mx-auto space-y-8">
 
+      <!-- Appearance -->
+      <section>
+        <h2 class="text-sm font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400 mb-3">Appearance</h2>
+        <div class="bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-lg p-4">
+          <p class="text-sm text-stone-500 dark:text-stone-400 mb-3">Choose your preferred color scheme.</p>
+          <div class="flex gap-1 bg-stone-100 dark:bg-stone-900 rounded-lg p-1 w-fit">
+            <button
+              v-for="option in themeOptions"
+              :key="option.value"
+              class="px-4 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer"
+              :class="theme === option.value
+                ? 'bg-white dark:bg-stone-700 text-stone-700 dark:text-stone-200 shadow-xs'
+                : 'text-stone-500 dark:text-stone-400 hover:text-stone-700 dark:hover:text-stone-200'"
+              @click="setTheme(option.value)"
+            >{{ option.label }}</button>
+          </div>
+        </div>
+      </section>
+
       <!-- GitHub Import -->
       <section>
-        <h2 class="text-sm font-semibold uppercase tracking-wider text-stone-500 mb-3">GitHub Import</h2>
-        <div class="bg-white border border-stone-200 rounded-lg p-4 space-y-3">
-          <p class="text-sm text-stone-500">
+        <h2 class="text-sm font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400 mb-3">GitHub Import</h2>
+        <div class="bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-lg p-4 space-y-3">
+          <p class="text-sm text-stone-500 dark:text-stone-400">
             Import a public Laravel repository. Files from the repo will replace matching files in the virtual filesystem.
-            The <code class="text-stone-600">vendor/</code> directory is skipped to preserve the WASM runtime.
+            The <code class="text-stone-600 dark:text-stone-300">vendor/</code> directory is skipped to preserve the WASM runtime.
           </p>
 
           <div class="flex gap-2">
@@ -244,9 +271,9 @@ function triggerDownload(blob: Blob, filename: string) {
               type="text"
               placeholder="https://github.com/owner/repo"
               :disabled="importing"
-              class="flex-1 px-3 py-2 text-sm border border-stone-300 rounded-md
+              class="flex-1 px-3 py-2 text-sm border border-stone-300 dark:border-stone-600 rounded-md bg-white dark:bg-stone-900 text-stone-700 dark:text-stone-200
                      focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-transparent
-                     disabled:opacity-50 disabled:bg-stone-50"
+                     disabled:opacity-50 disabled:bg-stone-50 dark:disabled:bg-stone-800"
               @keydown.enter="importRepo"
             />
             <button
@@ -262,7 +289,7 @@ function triggerDownload(blob: Blob, filename: string) {
 
           <!-- Progress bar -->
           <div v-if="importing || importDone" class="space-y-1">
-            <div class="h-1.5 bg-stone-100 rounded-full overflow-hidden">
+            <div class="h-1.5 bg-stone-100 dark:bg-stone-700 rounded-full overflow-hidden">
               <div
                 class="h-full rounded-full transition-all duration-300"
                 :class="importDone ? 'bg-emerald-500' : 'bg-rose-500'"
@@ -281,9 +308,9 @@ function triggerDownload(blob: Blob, filename: string) {
 
       <!-- Share -->
       <section>
-        <h2 class="text-sm font-semibold uppercase tracking-wider text-stone-500 mb-3">Share</h2>
-        <div class="bg-white border border-stone-200 rounded-lg p-4 space-y-3">
-          <p class="text-sm text-stone-500">
+        <h2 class="text-sm font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400 mb-3">Share</h2>
+        <div class="bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-lg p-4 space-y-3">
+          <p class="text-sm text-stone-500 dark:text-stone-400">
             Generate a shareable URL containing your file changes. The URL encodes a diff against the base Laravel app — anyone who opens it will see your modifications applied automatically.
           </p>
           <button
@@ -295,19 +322,19 @@ function triggerDownload(blob: Blob, filename: string) {
           >
             {{ sharing ? 'Generating...' : 'Copy Share URL' }}
           </button>
-          <p v-if="shareStatus" class="text-xs text-stone-500">{{ shareStatus }}</p>
+          <p v-if="shareStatus" class="text-xs text-stone-500 dark:text-stone-400">{{ shareStatus }}</p>
           <p v-if="shareError" class="text-xs text-red-600">{{ shareError }}</p>
         </div>
       </section>
 
       <!-- Export -->
       <section>
-        <h2 class="text-sm font-semibold uppercase tracking-wider text-stone-500 mb-3">Export</h2>
+        <h2 class="text-sm font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400 mb-3">Export</h2>
         <div class="space-y-3">
-          <div class="bg-white border border-stone-200 rounded-lg p-4 flex items-center justify-between gap-4">
+          <div class="bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-lg p-4 flex items-center justify-between gap-4">
             <div>
-              <p class="text-sm font-medium text-stone-700">Project Filesystem</p>
-              <p class="text-xs text-stone-400 mt-0.5">
+              <p class="text-sm font-medium text-stone-700 dark:text-stone-200">Project Filesystem</p>
+              <p class="text-xs text-stone-400 dark:text-stone-500 mt-0.5">
                 {{ exporting ? exportStatus : 'Download the entire /app directory as a .zip archive.' }}
               </p>
             </div>
@@ -321,10 +348,10 @@ function triggerDownload(blob: Blob, filename: string) {
               {{ exporting ? 'Exporting...' : 'Download .zip' }}
             </button>
           </div>
-          <div class="bg-white border border-stone-200 rounded-lg p-4 flex items-center justify-between gap-4">
+          <div class="bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-lg p-4 flex items-center justify-between gap-4">
             <div>
-              <p class="text-sm font-medium text-stone-700">SQLite Database</p>
-              <p class="text-xs mt-0.5" :class="dbExportStatus ? 'text-red-500' : 'text-stone-400'">
+              <p class="text-sm font-medium text-stone-700 dark:text-stone-200">SQLite Database</p>
+              <p class="text-xs mt-0.5" :class="dbExportStatus ? 'text-red-500' : 'text-stone-400 dark:text-stone-500'">
                 {{ dbExportStatus || 'Download database/database.sqlite.' }}
               </p>
             </div>
@@ -343,20 +370,20 @@ function triggerDownload(blob: Blob, filename: string) {
 
       <!-- Local Sync -->
       <section>
-        <h2 class="text-sm font-semibold uppercase tracking-wider text-stone-500 mb-3">Local Sync</h2>
-        <div class="bg-white border border-stone-200 rounded-lg p-4 space-y-3">
+        <h2 class="text-sm font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400 mb-3">Local Sync</h2>
+        <div class="bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-lg p-4 space-y-3">
 
           <!-- Not supported -->
           <template v-if="!isSupported">
-            <p class="text-sm text-stone-500">
+            <p class="text-sm text-stone-500 dark:text-stone-400">
               Your browser does not support the File System Access API.
-              Use <span class="font-medium text-stone-700">Chrome</span>, <span class="font-medium text-stone-700">Edge</span>, or <span class="font-medium text-stone-700">Opera</span> to enable local folder mirroring.
+              Use <span class="font-medium text-stone-700 dark:text-stone-200">Chrome</span>, <span class="font-medium text-stone-700 dark:text-stone-200">Edge</span>, or <span class="font-medium text-stone-700 dark:text-stone-200">Opera</span> to enable local folder mirroring.
             </p>
           </template>
 
           <!-- Disconnected -->
           <template v-else-if="syncState === 'disconnected'">
-            <p class="text-sm text-stone-500">
+            <p class="text-sm text-stone-500 dark:text-stone-400">
               Mirror the virtual filesystem to a local folder for editing in VS Code or any external editor. Changes sync both ways.
             </p>
             <button
@@ -371,13 +398,13 @@ function triggerDownload(blob: Blob, filename: string) {
           <!-- Initial sync -->
           <template v-else-if="syncState === 'syncing-initial'">
             <div class="space-y-1">
-              <div class="h-1.5 bg-stone-100 rounded-full overflow-hidden">
+              <div class="h-1.5 bg-stone-100 dark:bg-stone-700 rounded-full overflow-hidden">
                 <div
                   class="h-full bg-rose-500 rounded-full transition-all duration-300"
                   :style="{ width: `${syncProgress * 100}%` }"
                 />
               </div>
-              <p class="text-xs text-stone-400">{{ syncStatus }}</p>
+              <p class="text-xs text-stone-400 dark:text-stone-500">{{ syncStatus }}</p>
             </div>
           </template>
 
@@ -386,11 +413,11 @@ function triggerDownload(blob: Blob, filename: string) {
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-2">
                 <span class="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
-                <p class="text-sm text-stone-600">{{ syncStatus }}</p>
+                <p class="text-sm text-stone-600 dark:text-stone-300">{{ syncStatus }}</p>
               </div>
               <button
-                class="px-4 py-2 text-sm font-medium text-stone-600 bg-stone-100 rounded-md
-                       hover:bg-stone-200 cursor-pointer"
+                class="px-4 py-2 text-sm font-medium text-stone-600 dark:text-stone-300 bg-stone-100 dark:bg-stone-700 rounded-md
+                       hover:bg-stone-200 dark:hover:bg-stone-600 cursor-pointer"
                 @click="disconnect"
               >
                 Disconnect
@@ -415,46 +442,46 @@ function triggerDownload(blob: Blob, filename: string) {
 
       <!-- PHP Environment -->
       <section>
-        <h2 class="text-sm font-semibold uppercase tracking-wider text-stone-500 mb-3">PHP Environment</h2>
+        <h2 class="text-sm font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400 mb-3">PHP Environment</h2>
 
-        <div v-if="phpEnvLoading" class="bg-white border border-stone-200 rounded-lg p-4">
-          <p class="text-sm text-stone-400">Loading PHP environment...</p>
+        <div v-if="phpEnvLoading" class="bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-lg p-4">
+          <p class="text-sm text-stone-400 dark:text-stone-500">Loading PHP environment...</p>
         </div>
 
-        <div v-else-if="phpEnvError" class="bg-white border border-stone-200 rounded-lg p-4">
+        <div v-else-if="phpEnvError" class="bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-lg p-4">
           <p class="text-sm text-red-600">{{ phpEnvError }}</p>
         </div>
 
         <div v-else-if="phpEnv" class="space-y-3">
           <!-- Version -->
-          <div class="bg-white border border-stone-200 rounded-lg p-4">
-            <p class="text-xs font-semibold uppercase tracking-wider text-stone-400 mb-1">Version</p>
-            <p class="text-sm font-mono text-stone-700">PHP {{ phpEnv.version }}</p>
+          <div class="bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-lg p-4">
+            <p class="text-xs font-semibold uppercase tracking-wider text-stone-400 dark:text-stone-500 mb-1">Version</p>
+            <p class="text-sm font-mono text-stone-700 dark:text-stone-200">PHP {{ phpEnv.version }}</p>
           </div>
 
           <!-- INI Settings -->
-          <div class="bg-white border border-stone-200 rounded-lg p-4">
-            <p class="text-xs font-semibold uppercase tracking-wider text-stone-400 mb-2">Configuration</p>
+          <div class="bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-lg p-4">
+            <p class="text-xs font-semibold uppercase tracking-wider text-stone-400 dark:text-stone-500 mb-2">Configuration</p>
             <table class="w-full text-sm">
               <tbody>
-                <tr v-for="(value, key) in phpEnv.ini" :key="key" class="border-t border-stone-100 first:border-0">
-                  <td class="py-1.5 pr-4 font-mono text-stone-500 whitespace-nowrap">{{ key }}</td>
-                  <td class="py-1.5 font-mono text-stone-700">{{ value || '(empty)' }}</td>
+                <tr v-for="(value, key) in phpEnv.ini" :key="key" class="border-t border-stone-100 dark:border-stone-700 first:border-0">
+                  <td class="py-1.5 pr-4 font-mono text-stone-500 dark:text-stone-400 whitespace-nowrap">{{ key }}</td>
+                  <td class="py-1.5 font-mono text-stone-700 dark:text-stone-200">{{ value || '(empty)' }}</td>
                 </tr>
               </tbody>
             </table>
           </div>
 
           <!-- Extensions -->
-          <div class="bg-white border border-stone-200 rounded-lg p-4">
-            <p class="text-xs font-semibold uppercase tracking-wider text-stone-400 mb-2">
+          <div class="bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-lg p-4">
+            <p class="text-xs font-semibold uppercase tracking-wider text-stone-400 dark:text-stone-500 mb-2">
               Loaded Extensions ({{ phpEnv.extensions.length }})
             </p>
             <div class="flex flex-wrap gap-1.5">
               <span
                 v-for="ext in phpEnv.extensions"
                 :key="ext"
-                class="px-2 py-0.5 text-xs font-mono bg-stone-100 text-stone-600 rounded"
+                class="px-2 py-0.5 text-xs font-mono bg-stone-100 dark:bg-stone-700 text-stone-600 dark:text-stone-300 rounded"
               >{{ ext }}</span>
             </div>
           </div>

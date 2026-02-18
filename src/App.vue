@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { usePhp } from './composables/usePhp'
 import { useShareUrl } from './composables/useShareUrl'
+import { useTheme } from './composables/useTheme'
 import LoadingOverlay from './components/LoadingOverlay.vue'
 import AppHeader from './components/AppHeader.vue'
 import TabBar from './components/TabBar.vue'
@@ -17,6 +18,7 @@ const loadingFailed = ref(false)
 
 const { boot, booted, bootProgress, bootStatus } = usePhp()
 const { captureFromUrl, applyPendingPayload } = useShareUrl()
+useTheme()
 
 const hasSharePayload = captureFromUrl()
 
@@ -35,7 +37,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="bg-stone-50 text-stone-700 antialiased fixed inset-0 flex flex-col overflow-hidden">
+  <div class="bg-stone-50 dark:bg-stone-950 text-stone-700 dark:text-stone-200 antialiased fixed inset-0 flex flex-col overflow-hidden">
     <LoadingOverlay
       v-if="loading"
       :progress="bootProgress"

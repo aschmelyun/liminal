@@ -91,8 +91,8 @@ function onKeydown(e: KeyboardEvent) {
     <div ref="outputEl" class="flex-1 overflow-y-auto p-4 font-mono text-sm">
       <div v-for="(entry, i) in outputEntries" :key="i" v-html="entry.html"></div>
     </div>
-    <div class="panel-terminal-input border-t border-stone-200 bg-white px-4 pt-3 pb-8 md:py-3 shrink-0 flex items-center gap-2">
-      <span class="text-xs font-mono text-stone-400 shrink-0">php artisan</span>
+    <div class="panel-terminal-input border-t border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 px-4 pt-3 pb-8 md:py-3 shrink-0 flex items-center gap-2">
+      <span class="text-xs font-mono text-stone-400 dark:text-stone-500 shrink-0">php artisan</span>
       <input
         v-model="inputValue"
         type="text"
@@ -101,12 +101,12 @@ function onKeydown(e: KeyboardEvent) {
         autocorrect="off"
         :disabled="running"
         placeholder="e.g. make:model Post"
-        class="flex-1 px-2 py-1 text-sm font-mono bg-stone-50 border border-stone-200 rounded-md text-stone-700 outline-none focus:border-stone-400 focus:bg-white disabled:opacity-50 disabled:cursor-not-allowed"
+        class="flex-1 px-2 py-1 text-sm font-mono bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-md text-stone-700 dark:text-stone-200 outline-none focus:border-stone-400 dark:focus:border-stone-500 focus:bg-white dark:focus:bg-stone-700 disabled:opacity-50 disabled:cursor-not-allowed"
         @keydown="onKeydown"
       />
       <button
         :disabled="running"
-        class="px-2.5 py-1 text-xs font-medium text-white bg-stone-700 rounded-md hover:bg-stone-800 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+        class="px-2.5 py-1 text-xs font-medium text-white bg-stone-700 dark:bg-stone-600 rounded-md hover:bg-stone-800 dark:hover:bg-stone-500 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
         @click="run"
       >Run</button>
     </div>

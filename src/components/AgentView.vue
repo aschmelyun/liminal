@@ -468,9 +468,9 @@ function onKeydown(e: KeyboardEvent) {
     <!-- Initial hero screen -->
     <template v-if="showPlaceholder">
       <div class="flex-1 flex items-center justify-center px-6">
-        <div class="bg-white rounded-2xl shadow-lg border border-stone-200 px-8 py-10 flex flex-col items-center w-full max-w-lg">
-          <h2 class="text-2xl font-semibold text-stone-700 mb-2">What do you want to build?</h2>
-          <p class="text-sm text-stone-400 mb-6">Describe what you're imagining and the agent will build it.</p>
+        <div class="bg-white dark:bg-stone-900 rounded-2xl shadow-lg border border-stone-200 dark:border-stone-700 px-8 py-10 flex flex-col items-center w-full max-w-lg">
+          <h2 class="text-2xl font-semibold text-stone-700 dark:text-stone-200 mb-2">What do you want to build?</h2>
+          <p class="text-sm text-stone-400 dark:text-stone-500 mb-6">Describe what you're imagining and the agent will build it.</p>
           <div class="w-full flex items-center gap-2">
             <input
               v-model="inputValue"
@@ -479,7 +479,7 @@ function onKeydown(e: KeyboardEvent) {
               autocapitalize="off"
               autocorrect="off"
               placeholder="Add a blog with posts and comments..."
-              class="flex-1 px-3 py-2.5 text-sm bg-stone-50 border border-stone-200 rounded-lg text-stone-700 outline-none focus:border-stone-400 focus:bg-white"
+              class="flex-1 px-3 py-2.5 text-sm bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-lg text-stone-700 dark:text-stone-200 outline-none focus:border-stone-400 dark:focus:border-stone-500 focus:bg-white dark:focus:bg-stone-700"
               @keydown="onKeydown"
             />
             <button
@@ -492,12 +492,12 @@ function onKeydown(e: KeyboardEvent) {
               v-model="apiKey"
               type="password"
               placeholder="OpenAI API key"
-              class="px-2 py-1 text-xs font-mono bg-stone-50 border border-stone-200 rounded-md text-stone-500 outline-none focus:border-stone-400 focus:bg-white w-48"
+              class="px-2 py-1 text-xs font-mono bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-md text-stone-500 dark:text-stone-400 outline-none focus:border-stone-400 dark:focus:border-stone-500 focus:bg-white dark:focus:bg-stone-700 w-48"
               @input="onApiKeyInput"
             />
             <select
               v-model="model"
-              class="px-2 py-1 text-xs bg-stone-50 border border-stone-200 rounded-md text-stone-500 outline-none focus:border-stone-400"
+              class="px-2 py-1 text-xs bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-md text-stone-500 dark:text-stone-400 outline-none focus:border-stone-400 dark:focus:border-stone-500"
               @change="onModelChange"
             >
               <option v-for="m in modelOptions" :key="m" :value="m">{{ m }}</option>
@@ -510,23 +510,23 @@ function onKeydown(e: KeyboardEvent) {
     <!-- Chat layout (after first message) -->
     <template v-else>
       <!-- Settings bar -->
-      <div class="border-b border-stone-200 bg-white px-4 py-2 shrink-0 flex items-center gap-3 flex-wrap">
+      <div class="border-b border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 px-4 py-2 shrink-0 flex items-center gap-3 flex-wrap">
         <input
           v-model="apiKey"
           type="password"
           placeholder="OpenAI API key"
-          class="px-2 py-1 text-sm font-mono bg-stone-50 border border-stone-200 rounded-md text-stone-700 outline-none focus:border-stone-400 focus:bg-white w-52"
+          class="px-2 py-1 text-sm font-mono bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-md text-stone-700 dark:text-stone-200 outline-none focus:border-stone-400 dark:focus:border-stone-500 focus:bg-white dark:focus:bg-stone-700 w-52"
           @input="onApiKeyInput"
         />
         <select
           v-model="model"
-          class="px-2 py-1 text-sm bg-stone-50 border border-stone-200 rounded-md text-stone-700 outline-none focus:border-stone-400"
+          class="px-2 py-1 text-sm bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-md text-stone-700 dark:text-stone-200 outline-none focus:border-stone-400 dark:focus:border-stone-500"
           @change="onModelChange"
         >
           <option v-for="m in modelOptions" :key="m" :value="m">{{ m }}</option>
         </select>
         <button
-          class="px-2.5 py-1 text-xs font-medium text-stone-500 border border-stone-200 rounded-md hover:bg-stone-50 shrink-0"
+          class="px-2.5 py-1 text-xs font-medium text-stone-500 dark:text-stone-400 border border-stone-200 dark:border-stone-700 rounded-md hover:bg-stone-50 dark:hover:bg-stone-800 shrink-0"
           @click="clearChat"
         >Clear Chat</button>
       </div>
@@ -544,7 +544,7 @@ function onKeydown(e: KeyboardEvent) {
         ></div>
       </div>
       <!-- Chat input -->
-      <div class="panel-agent-input border-t border-stone-200 bg-white px-4 pt-3 pb-8 md:py-3 shrink-0 flex items-center gap-2">
+      <div class="panel-agent-input border-t border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 px-4 pt-3 pb-8 md:py-3 shrink-0 flex items-center gap-2">
         <input
           v-model="inputValue"
           type="text"
@@ -552,7 +552,7 @@ function onKeydown(e: KeyboardEvent) {
           autocapitalize="off"
           autocorrect="off"
           placeholder="Add a blog with posts and comments..."
-          class="flex-1 px-2 py-1.5 text-sm bg-stone-50 border border-stone-200 rounded-md text-stone-700 outline-none focus:border-stone-400 focus:bg-white"
+          class="flex-1 px-2 py-1.5 text-sm bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-md text-stone-700 dark:text-stone-200 outline-none focus:border-stone-400 dark:focus:border-stone-500 focus:bg-white dark:focus:bg-stone-700"
           :disabled="agentRunning"
           @keydown="onKeydown"
         />

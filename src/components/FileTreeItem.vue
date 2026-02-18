@@ -25,7 +25,7 @@ function toggle() {
 <template>
   <div>
     <div
-      class="flex items-center gap-1.5 px-3 py-0.5 cursor-pointer hover:bg-stone-50 select-none"
+      class="flex items-center gap-1.5 px-3 py-0.5 cursor-pointer hover:bg-stone-50 dark:hover:bg-stone-800 select-none"
       :style="{ paddingLeft: `${12 + depth * 16}px` }"
       @click.stop="toggle"
     >
@@ -47,7 +47,7 @@ function toggle() {
       <!-- Icon -->
       <svg
         v-if="isDir"
-        class="w-4 h-4 shrink-0 text-stone-500"
+        class="w-4 h-4 shrink-0 text-stone-500 dark:text-stone-400"
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
@@ -57,7 +57,7 @@ function toggle() {
       ><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
       <svg
         v-else
-        class="w-4 h-4 shrink-0 text-stone-400"
+        class="w-4 h-4 shrink-0 text-stone-400 dark:text-stone-500"
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
@@ -69,7 +69,7 @@ function toggle() {
       <!-- Label -->
       <span
         class="truncate"
-        :class="isDir ? 'text-stone-700' : 'text-stone-600'"
+        :class="isDir ? 'text-stone-700 dark:text-stone-200' : 'text-stone-600 dark:text-stone-400'"
       >{{ name }}</span>
     </div>
 

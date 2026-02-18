@@ -46,28 +46,28 @@ function onKeydown(e: KeyboardEvent) {
 
 <template>
   <div class="flex-1 flex flex-col min-h-0">
-    <div class="px-4 py-2 border-b border-stone-100 bg-white shrink-0 flex items-center gap-2">
-      <label class="text-xs font-semibold text-stone-400 uppercase tracking-wider shrink-0">Route</label>
+    <div class="px-4 py-2 border-b border-stone-100 dark:border-stone-800 bg-white dark:bg-stone-900 shrink-0 flex items-center gap-2">
+      <label class="text-xs font-semibold text-stone-400 dark:text-stone-500 uppercase tracking-wider shrink-0">Route</label>
       <div class="flex items-center flex-1 gap-1.5">
         <input
           v-model="routeInput"
           type="text"
           spellcheck="false"
-          class="flex-1 px-2 py-1 text-sm font-mono bg-stone-50 border border-stone-200 rounded-md text-stone-700 outline-none focus:border-stone-400 focus:bg-white disabled:opacity-50 disabled:cursor-not-allowed"
+          class="flex-1 px-2 py-1 text-sm font-mono bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-md text-stone-700 dark:text-stone-200 outline-none focus:border-stone-400 dark:focus:border-stone-500 focus:bg-white dark:focus:bg-stone-700 disabled:opacity-50 disabled:cursor-not-allowed"
           :disabled="navigating"
           @keydown="onKeydown"
         />
         <button
           :disabled="navigating"
-          class="px-2.5 py-1 text-xs font-medium text-white bg-stone-700 rounded-md hover:bg-stone-800 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+          class="px-2.5 py-1 text-xs font-medium text-white bg-stone-700 dark:bg-stone-600 rounded-md hover:bg-stone-800 dark:hover:bg-stone-500 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
           @click="go"
         >Go</button>
       </div>
     </div>
-    <div class="flex-1 p-4 bg-stone-100 min-h-0">
+    <div class="flex-1 p-4 bg-stone-100 dark:bg-stone-950 min-h-0">
       <iframe
         :srcdoc="srcdoc"
-        class="w-full h-full bg-white rounded-lg border border-stone-200 shadow-xs"
+        class="w-full h-full bg-white rounded-lg border border-stone-200 dark:border-stone-700 shadow-xs"
       ></iframe>
     </div>
   </div>

@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Class-based dark mode for Tailwind v4 */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @utility loader-spin {
     animation: spin 0.8s linear infinite;
 }
@@ -66,6 +69,27 @@
 .agent-msg-tool .tool-name {
     font-weight: 600;
     color: #57534e;
+}
+
+/* Dark mode overrides for custom agent message classes */
+.dark .agent-msg-user {
+    border-left-color: #57534e;
+    color: #d6d3d1;
+}
+
+.dark .agent-msg-assistant code:not(pre code) {
+    background: #292524;
+    color: #d6d3d1;
+}
+
+.dark .agent-msg-tool {
+    background: #1c1917;
+    border-color: #44403c;
+    color: #a8a29e;
+}
+
+.dark .agent-msg-tool .tool-name {
+    color: #d6d3d1;
 }
 
 /* Extra bottom padding for Safari's floating address bar */

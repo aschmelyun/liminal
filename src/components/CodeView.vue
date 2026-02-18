@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
 import { usePhp } from '../composables/usePhp'
+import { useTheme } from '../composables/useTheme'
 import FileTree, { type TreeNode } from './FileTree.vue'
 import { EditorView, basicSetup } from 'codemirror'
-import { EditorState } from '@codemirror/state'
+import { EditorState, Compartment } from '@codemirror/state'
 import { keymap } from '@codemirror/view'
+import { oneDark } from '@codemirror/theme-one-dark'
 import { php as phpLang } from '@codemirror/lang-php'
 import { html } from '@codemirror/lang-html'
 import { javascript } from '@codemirror/lang-javascript'
@@ -12,6 +14,9 @@ import { json } from '@codemirror/lang-json'
 import { css } from '@codemirror/lang-css'
 
 const { php, booted, vfsVersion, readFile, writeFile, collectVfsPaths } = usePhp()
+const { isDark } = useTheme()
+
+const editorThemeCompartment = new Compartment()
 
 const tree = ref<TreeNode>({})
 const currentFilePath = ref<string | null>(null)
@@ -105,6 +110,7 @@ function createEditor(content: string, langExt: any) {
     saveKeymap,
     updateListener,
     EditorView.lineWrapping,
+    editorThemeCompartment.of(isDark.value ? oneDark : []),
   ]
 
   if (langExt) {
@@ -156,6 +162,12 @@ function saveFile() {
   }
 }
 
+watch(isDark, (dark) => {
+  editorView?.dispatch({
+    effects: editorThemeCompartment.reconfigure(dark ? oneDark : []),
+  })
+})
+
 watch(booted, (val) => {
   if (val) refreshFileTree()
 })
@@ -175,28 +187,28 @@ defineExpose({ openFile, refreshFileTree })
 <template>
   <div class="flex-1 flex flex-col md:flex-row min-h-0">
     <!-- File tree -->
-    <aside class="order-2 md:order-none h-44 md:h-auto w-full md:w-72 border-t md:border-t-0 md:border-r border-stone-200 bg-white overflow-y-auto shrink-0 flex flex-col">
-      <div class="px-3 py-2 border-b border-stone-100 shrink-0">
-        <h2 class="text-xs font-semibold text-stone-400 uppercase tracking-wider">Files</h2>
+    <aside class="order-2 md:order-none h-44 md:h-auto w-full md:w-72 border-t md:border-t-0 md:border-r border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 overflow-y-auto shrink-0 flex flex-col">
+      <div class="px-3 py-2 border-b border-stone-100 dark:border-stone-800 shrink-0">
+        <h2 class="text-xs font-semibold text-stone-400 dark:text-stone-500 uppercase tracking-wider">Files</h2>
       </div>
-      <div class="py-1 text-sm font-mono text-stone-600 flex-1 overflow-y-auto">
+      <div class="py-1 text-sm font-mono text-stone-600 dark:text-stone-300 flex-1 overflow-y-auto">
         <FileTree
           v-if="Object.keys(tree).length > 0"
           :tree="tree"
           @open-file="openFile"
         />
-        <div v-else class="px-3 py-8 text-center text-xs text-stone-400">Waiting for boot...</div>
+        <div v-else class="px-3 py-8 text-center text-xs text-stone-400 dark:text-stone-500">Waiting for boot...</div>
       </div>
     </aside>
     <!-- File editor -->
     <div class="flex-1 flex flex-col min-w-0 min-h-0 order-1 md:order-none">
-      <div class="px-4 py-2 border-b border-stone-100 bg-white shrink-0 flex items-center justify-between">
-        <span class="text-xs font-mono text-stone-500">{{ fileViewerPath }}</span>
+      <div class="px-4 py-2 border-b border-stone-100 dark:border-stone-800 bg-white dark:bg-stone-900 shrink-0 flex items-center justify-between">
+        <span class="text-xs font-mono text-stone-500 dark:text-stone-400">{{ fileViewerPath }}</span>
         <div class="flex items-center gap-2">
-          <span v-show="saveStatusVisible" class="text-xs text-stone-400">{{ saveStatusText }}</span>
+          <span v-show="saveStatusVisible" class="text-xs text-stone-400 dark:text-stone-500">{{ saveStatusText }}</span>
           <button
             :disabled="saveDisabled"
-            class="px-2.5 py-1 text-xs font-medium text-white bg-stone-700 rounded-md hover:bg-stone-800 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+            class="px-2.5 py-1 text-xs font-medium text-white bg-stone-700 dark:bg-stone-600 rounded-md hover:bg-stone-800 dark:hover:bg-stone-500 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
             @click="saveFile"
           >Save</button>
         </div>
