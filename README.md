@@ -41,7 +41,8 @@ cd ../liminal/app   # path to the Laravel project
 composer install --no-dev --optimize-autoloader
 ```
 
-> **TODO:** automate this step or vendor the dependencies into the repo so a manual `composer install` isn't required.
+> [!NOTE]
+> I gotta figure out a way to do this without Composer and without having to commit the whole dang vendor directory.
 
 Then build and preview:
 
