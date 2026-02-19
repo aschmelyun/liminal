@@ -73,3 +73,7 @@ On boot, the app downloads `app.zip` and extracts it into an in-memory virtual f
 - The `vendor/` directory is pre-bundled in `app.zip` and cannot be modified
 - SQLite only — no MySQL/Postgres
 - Performance is slower than native PHP, especially on first boot
+
+## License
+
+This project is licensed under MIT, but uses [php-wasm](https://github.com/seanmorris/php-wasm) which is licensed as GPLv2. If you're cloning this project or using it in your own derivitive works, just keep that in mind! 
