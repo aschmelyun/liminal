@@ -174,18 +174,18 @@ export function usePhp() {
 
     try {
       // 1. Fetch package metadata from Packagist
-      const metaRes = await fetch(`https://repo.packagist.org/p2/${vendor}/${name}.json`)
+      const metaRes = await fetch(`https://packagist.org/packages/${vendor}/${name}.json`)
       if (!metaRes.ok) {
         return { output: '', errors: `Package "${packageName}" not found on Packagist.` }
       }
       const meta = await metaRes.json()
-      const versions = meta.packages?.[packageName] ?? []
+      const versionsObj = meta.package?.versions ?? {}
 
       // Pick latest stable version (no dev/alpha/beta/RC)
-      const stable = versions.find((v: any) => {
+      const stable = Object.values(versionsObj).find((v: any) => {
         const ver: string = v.version || ''
         return !ver.includes('dev') && !ver.includes('alpha') && !ver.includes('beta') && !ver.includes('RC')
-      })
+      }) as any
       if (!stable) {
         return { output: '', errors: `No stable version found for "${packageName}".` }
       }
