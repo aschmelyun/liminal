@@ -196,30 +196,21 @@ export function usePhp() {
         return { output: '', errors: `No dist URL found for ${packageName}@${version}.` }
       }
 
-      // 2. Download the zip
-      let zipData: ArrayBuffer
-      try {
-        const zipRes = await fetch(distUrl)
-        if (!zipRes.ok) throw new Error(`HTTP ${zipRes.status}`)
-        zipData = await zipRes.arrayBuffer()
-      } catch {
-        // Try GitHub API as fallback for CORS issues
-        const ref = stable.dist?.reference
-        if (ref && distUrl.includes('github.com')) {
-          const ghMatch = distUrl.match(/github\.com\/([^/]+)\/([^/]+)\//)
-          if (ghMatch) {
-            const ghRes = await fetch(`https://api.github.com/repos/${ghMatch[1]}/${ghMatch[2]}/zipball/${ref}`)
-            if (!ghRes.ok) {
-              return { output: '', errors: `Failed to download package zip (CORS or network error).` }
-            }
-            zipData = await ghRes.arrayBuffer()
-          } else {
-            return { output: '', errors: `Failed to download package zip.` }
-          }
-        } else {
-          return { output: '', errors: `Failed to download package zip.` }
-        }
+      // 2. Download the zip from GitHub archive
+      const ref = stable.dist?.reference || 'main'
+      const ghMatch = distUrl.match(/github\.com\/([^/]+)\/([^/]+)\//)
+      let zipUrl: string
+      if (ghMatch) {
+        zipUrl = `https://github.com/${ghMatch[1]}/${ghMatch[2]}/archive/refs/heads/${ref}.zip`
+      } else {
+        zipUrl = distUrl
       }
+
+      const zipRes = await fetch(zipUrl)
+      if (!zipRes.ok) {
+        return { output: '', errors: `Failed to download package zip (HTTP ${zipRes.status}).` }
+      }
+      const zipData = await zipRes.arrayBuffer()
 
       // 3. Extract zip into vendor directory
       const zip = await JSZip.loadAsync(zipData)
