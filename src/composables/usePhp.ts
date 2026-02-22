@@ -227,7 +227,8 @@ export function usePhp() {
 
       // Find the common prefix (most zips have a single root folder)
       const allPaths = zipFiles.map(([p]) => p)
-      const prefix = allPaths.length > 0 ? allPaths[0].split('/')[0] + '/' : ''
+      const firstPath = allPaths[0]
+      const prefix = firstPath ? firstPath.split('/')[0] + '/' : ''
       const hasCommonPrefix = prefix && allPaths.every(p => p.startsWith(prefix))
 
       const vendorBase = `/app/vendor/${vendor}/${name}`
