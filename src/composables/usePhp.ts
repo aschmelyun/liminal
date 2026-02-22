@@ -196,17 +196,11 @@ export function usePhp() {
         return { output: '', errors: `No dist URL found for ${packageName}@${version}.` }
       }
 
-      // 2. Download the zip from GitHub archive
-      const ref = stable.dist?.reference || 'main'
-      const ghMatch = distUrl.match(/github\.com\/([^/]+)\/([^/]+)\//)
-      let zipUrl: string
-      if (ghMatch) {
-        zipUrl = `https://github.com/${ghMatch[1]}/${ghMatch[2]}/archive/refs/heads/${ref}.zip`
-      } else {
-        zipUrl = distUrl
-      }
-
-      const zipRes = await fetch(zipUrl)
+      // 2. Download the zip via CORS proxy
+      const zipRes = await fetch(`https://cors-anywhere.com/${distUrl}`, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        redirect: 'follow',
+      })
       if (!zipRes.ok) {
         return { output: '', errors: `Failed to download package zip (HTTP ${zipRes.status}).` }
       }
