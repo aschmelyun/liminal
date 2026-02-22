@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { ref, nextTick } from 'vue'
+import { ref, computed, nextTick } from 'vue'
 import { usePhp } from '../composables/usePhp'
 
-const { runArtisan, collectVfsPaths } = usePhp()
+const { runArtisan, runComposerRequire } = usePhp()
 
 const inputValue = ref('')
 const running = ref(false)
 const outputEl = ref<HTMLDivElement | null>(null)
+const commandType = ref<'artisan' | 'composer'>('artisan')
 
 const commandHistory: string[] = []
 let historyIndex = -1
@@ -16,8 +17,12 @@ interface OutputEntry {
 }
 
 const outputEntries = ref<OutputEntry[]>([
-  { html: '<div class="text-stone-400">Laravel Artisan — type a command below to run it.</div>' },
+  { html: '<div class="text-stone-400">Laravel Terminal — use the dropdown to switch between Artisan and Composer modes.</div>' },
 ])
+
+const placeholder = computed(() =>
+  commandType.value === 'artisan' ? 'e.g. make:model Post' : 'e.g. spatie/laravel-sluggable'
+)
 
 function escapeHtml(str: string) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -41,27 +46,49 @@ async function run() {
   commandHistory.push(trimmed)
   historyIndex = commandHistory.length
 
-  appendOutput(`<div class="mt-3 text-stone-500">$ php artisan ${escapeHtml(trimmed)}</div>`)
+  if (commandType.value === 'artisan') {
+    appendOutput(`<div class="mt-3 text-stone-500">$ php artisan ${escapeHtml(trimmed)}</div>`)
 
-  try {
-    const { output, errors } = await runArtisan(trimmed)
+    try {
+      const { output, errors } = await runArtisan(trimmed)
 
-    if (output) {
-      appendOutput(`<pre class="text-stone-700 whitespace-pre-wrap">${escapeHtml(output)}</pre>`)
+      if (output) {
+        appendOutput(`<pre class="text-stone-700 dark:text-stone-300 whitespace-pre-wrap">${escapeHtml(output)}</pre>`)
+      }
+      if (errors) {
+        appendOutput(`<pre class="text-red-600 whitespace-pre-wrap">${escapeHtml(errors)}</pre>`)
+      }
+      if (!output && !errors) {
+        appendOutput(`<div class="text-stone-400 italic">Command completed with no output.</div>`)
+      }
+    } catch (err: any) {
+      appendOutput(`<pre class="text-red-600 whitespace-pre-wrap">${escapeHtml(err.message)}</pre>`)
+      console.error(err)
     }
-    if (errors) {
-      appendOutput(`<pre class="text-red-600 whitespace-pre-wrap">${escapeHtml(errors)}</pre>`)
+  } else {
+    appendOutput(`<div class="mt-3 text-stone-500">$ composer require ${escapeHtml(trimmed)}</div>`)
+    appendOutput(`<div class="text-stone-400 italic">Fetching package info...</div>`)
+
+    try {
+      const { output, errors } = await runComposerRequire(trimmed)
+
+      if (output) {
+        appendOutput(`<pre class="text-stone-700 dark:text-stone-300 whitespace-pre-wrap">${escapeHtml(output)}</pre>`)
+      }
+      if (errors) {
+        appendOutput(`<pre class="text-red-600 whitespace-pre-wrap">${escapeHtml(errors)}</pre>`)
+      }
+      if (!output && !errors) {
+        appendOutput(`<div class="text-stone-400 italic">Command completed with no output.</div>`)
+      }
+    } catch (err: any) {
+      appendOutput(`<pre class="text-red-600 whitespace-pre-wrap">${escapeHtml(err.message)}</pre>`)
+      console.error(err)
     }
-    if (!output && !errors) {
-      appendOutput(`<div class="text-stone-400 italic">Command completed with no output.</div>`)
-    }
-  } catch (err: any) {
-    appendOutput(`<pre class="text-red-600 whitespace-pre-wrap">${escapeHtml(err.message)}</pre>`)
-    console.error(err)
-  } finally {
-    running.value = false
-    inputValue.value = ''
   }
+
+  running.value = false
+  inputValue.value = ''
 }
 
 function onKeydown(e: KeyboardEvent) {
@@ -92,7 +119,13 @@ function onKeydown(e: KeyboardEvent) {
       <div v-for="(entry, i) in outputEntries" :key="i" v-html="entry.html"></div>
     </div>
     <div class="panel-terminal-input border-t border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 px-4 pt-3 pb-8 md:py-3 shrink-0 flex items-center gap-2">
-      <span class="text-xs font-mono text-stone-400 dark:text-stone-500 shrink-0">php artisan</span>
+      <select
+        v-model="commandType"
+        class="text-xs font-mono text-stone-500 dark:text-stone-400 bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-md px-1.5 py-1 outline-none focus:border-stone-400 dark:focus:border-stone-500 shrink-0 cursor-pointer"
+      >
+        <option value="artisan">php artisan</option>
+        <option value="composer">composer require</option>
+      </select>
       <input
         v-model="inputValue"
         type="text"
@@ -100,7 +133,7 @@ function onKeydown(e: KeyboardEvent) {
         autocapitalize="off"
         autocorrect="off"
         :disabled="running"
-        placeholder="e.g. make:model Post"
+        :placeholder="placeholder"
         class="flex-1 px-2 py-1 text-sm font-mono bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-md text-stone-700 dark:text-stone-200 outline-none focus:border-stone-400 dark:focus:border-stone-500 focus:bg-white dark:focus:bg-stone-700 disabled:opacity-50 disabled:cursor-not-allowed"
         @keydown="onKeydown"
       />

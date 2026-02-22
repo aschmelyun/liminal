@@ -146,6 +146,144 @@ export function usePhp() {
     php.value.mkdir(path)
   }
 
+  async function dumpAutoload(): Promise<{ output: string; errors: string }> {
+    if (!php.value) return { output: '', errors: '' }
+    const result = await php.value.run({
+      code: `<?php
+        chdir('/app');
+        require '/app/vendor/autoload.php';
+        $app = require_once '/app/bootstrap/app.php';
+        $kernel = $app->make(Illuminate\\Contracts\\Console\\Kernel::class);
+        $kernel->bootstrap();
+        $status = Illuminate\\Support\\Facades\\Artisan::call('package:discover');
+        echo Illuminate\\Support\\Facades\\Artisan::output();
+      `,
+    })
+    vfsVersion.value++
+    return { output: result.text || '', errors: result.errors || '' }
+  }
+
+  async function runComposerRequire(packageName: string): Promise<{ output: string; errors: string }> {
+    if (!php.value) return { output: '', errors: 'PHP runtime not loaded' }
+
+    const parts = packageName.split('/')
+    if (parts.length !== 2) {
+      return { output: '', errors: 'Invalid package name. Use vendor/package format.' }
+    }
+    const [vendor, name] = parts
+
+    try {
+      // 1. Fetch package metadata from Packagist
+      const metaRes = await fetch(`https://repo.packagist.org/p2/${vendor}/${name}.json`)
+      if (!metaRes.ok) {
+        return { output: '', errors: `Package "${packageName}" not found on Packagist.` }
+      }
+      const meta = await metaRes.json()
+      const versions = meta.packages?.[packageName] ?? []
+
+      // Pick latest stable version (no dev/alpha/beta/RC)
+      const stable = versions.find((v: any) => {
+        const ver: string = v.version || ''
+        return !ver.includes('dev') && !ver.includes('alpha') && !ver.includes('beta') && !ver.includes('RC')
+      })
+      if (!stable) {
+        return { output: '', errors: `No stable version found for "${packageName}".` }
+      }
+
+      const version = stable.version
+      const distUrl = stable.dist?.url
+      if (!distUrl) {
+        return { output: '', errors: `No dist URL found for ${packageName}@${version}.` }
+      }
+
+      // 2. Download the zip
+      let zipData: ArrayBuffer
+      try {
+        const zipRes = await fetch(distUrl)
+        if (!zipRes.ok) throw new Error(`HTTP ${zipRes.status}`)
+        zipData = await zipRes.arrayBuffer()
+      } catch {
+        // Try GitHub API as fallback for CORS issues
+        const ref = stable.dist?.reference
+        if (ref && distUrl.includes('github.com')) {
+          const ghMatch = distUrl.match(/github\.com\/([^/]+)\/([^/]+)\//)
+          if (ghMatch) {
+            const ghRes = await fetch(`https://api.github.com/repos/${ghMatch[1]}/${ghMatch[2]}/zipball/${ref}`)
+            if (!ghRes.ok) {
+              return { output: '', errors: `Failed to download package zip (CORS or network error).` }
+            }
+            zipData = await ghRes.arrayBuffer()
+          } else {
+            return { output: '', errors: `Failed to download package zip.` }
+          }
+        } else {
+          return { output: '', errors: `Failed to download package zip.` }
+        }
+      }
+
+      // 3. Extract zip into vendor directory
+      const zip = await JSZip.loadAsync(zipData)
+      const zipFiles = Object.entries(zip.files).filter(([, f]) => !f.dir)
+
+      // Find the common prefix (most zips have a single root folder)
+      const allPaths = zipFiles.map(([p]) => p)
+      const prefix = allPaths.length > 0 ? allPaths[0].split('/')[0] + '/' : ''
+      const hasCommonPrefix = prefix && allPaths.every(p => p.startsWith(prefix))
+
+      const vendorBase = `/app/vendor/${vendor}/${name}`
+      // Ensure vendor directories exist
+      const ensureDir = (dirPath: string) => {
+        const segs = dirPath.split('/').filter(Boolean)
+        let cur = ''
+        for (const seg of segs) {
+          cur += '/' + seg
+          if (!php.value!.fileExists(cur)) {
+            php.value!.mkdir(cur)
+          }
+        }
+      }
+      ensureDir(vendorBase)
+
+      let fileCount = 0
+      for (const [path, file] of zipFiles) {
+        const relativePath = hasCommonPrefix ? path.slice(prefix.length) : path
+        if (!relativePath) continue
+        const vfsPath = `${vendorBase}/${relativePath}`
+
+        // Ensure parent directories exist
+        const parentDir = vfsPath.split('/').slice(0, -1).join('/')
+        ensureDir(parentDir)
+
+        const content = await file.async('uint8array')
+        php.value!.writeFile(vfsPath, content)
+        fileCount++
+      }
+
+      // 4. Update composer.json
+      const composerJsonPath = '/app/composer.json'
+      const composerJson = JSON.parse(php.value.readFileAsText(composerJsonPath))
+      if (!composerJson.require) composerJson.require = {}
+      composerJson.require[packageName] = `^${version.replace(/^v/, '')}`
+      php.value.writeFile(composerJsonPath, JSON.stringify(composerJson, null, 4))
+
+      // 5. Dump autoload
+      const autoloadResult = await dumpAutoload()
+
+      vfsVersion.value++
+
+      let output = `Package ${packageName}@${version} installed successfully.\n`
+      output += `Extracted ${fileCount} files to vendor/${vendor}/${name}/\n`
+      output += `Updated composer.json\n`
+      if (autoloadResult.output) {
+        output += autoloadResult.output
+      }
+
+      return { output, errors: autoloadResult.errors }
+    } catch (err: any) {
+      return { output: '', errors: err.message || 'Unknown error during composer require.' }
+    }
+  }
+
   function collectVfsPaths(dir = '/app'): string[] {
     const paths: string[] = []
     try {
@@ -172,6 +310,8 @@ export function usePhp() {
     boot,
     navigateTo,
     runArtisan,
+    runComposerRequire,
+    dumpAutoload,
     readFile,
     readFileAsBuffer,
     writeFile,
