@@ -148,10 +148,18 @@ export function usePhp() {
 
   async function dumpAutoload(): Promise<{ output: string; errors: string }> {
     if (!php.value) return { output: '', errors: '' }
+    // Re-generate the Composer autoloader at runtime so newly-installed
+    // packages are picked up by class_exists / use statements.
     const result = await php.value.run({
       code: `<?php
         chdir('/app');
+        // Rebuild the Composer autoloader from scratch
+        require '/app/vendor/composer/autoload_real.php';
+
+        // Re-register the autoloader with the updated files
         require '/app/vendor/autoload.php';
+
+        // Bootstrap Laravel so package:discover can run
         $app = require_once '/app/bootstrap/app.php';
         $kernel = $app->make(Illuminate\\Contracts\\Console\\Kernel::class);
         $kernel->bootstrap();
@@ -161,6 +169,101 @@ export function usePhp() {
     })
     vfsVersion.value++
     return { output: result.text || '', errors: result.errors || '' }
+  }
+
+  function registerPackageAutoload(packageName: string, vendorBase: string): string[] {
+    if (!php.value) return []
+
+    const registered: string[] = []
+
+    // Read the package's own composer.json for autoload config
+    const pkgComposerPath = `${vendorBase}/composer.json`
+    if (!php.value.fileExists(pkgComposerPath)) return []
+
+    const pkgComposer = JSON.parse(php.value.readFileAsText(pkgComposerPath))
+    const psr4 = pkgComposer.autoload?.['psr-4'] ?? {}
+
+    // Read the current autoload_psr4.php
+    const psr4Path = '/app/vendor/composer/autoload_psr4.php'
+    let psr4Content = php.value.readFileAsText(psr4Path)
+
+    // Read the current autoload_classmap.php
+    const classmapPath = '/app/vendor/composer/autoload_classmap.php'
+    let classmapContent = php.value.readFileAsText(classmapPath)
+
+    // Read the current autoload_static.php
+    const staticPath = '/app/vendor/composer/autoload_static.php'
+    let staticContent = php.value.readFileAsText(staticPath)
+
+    for (const [namespace, path] of Object.entries(psr4)) {
+      const vendorRelative = vendorBase.replace('/app/', '')
+      const fullPath = `$vendorDir . '/${vendorRelative}/${path}'`
+      const escapedNs = (namespace as string).replace(/\\/g, '\\\\')
+
+      // Add to autoload_psr4.php if not already present
+      if (!psr4Content.includes(`'${escapedNs}'`)) {
+        psr4Content = psr4Content.replace(
+          /return array\(/,
+          `return array(\n    '${escapedNs}' => array(${fullPath}),`
+        )
+        registered.push(`PSR-4: ${namespace} → ${path}`)
+      }
+
+      // Add to autoload_static.php $prefixDirsPsr4
+      if (!staticContent.includes(`'${escapedNs}'`)) {
+        staticContent = staticContent.replace(
+          /public static \$prefixDirsPsr4 = array \(/,
+          `public static $prefixDirsPsr4 = array (\n        '${escapedNs}' => \n        array (\n            0 => __DIR__ . '/../..' . '/${vendorRelative}/${path}',\n        ),`
+        )
+
+        // Also add to $prefixLengthsPsr4
+        const firstChar = (namespace as string)[0]
+        const nsLength = (namespace as string).length
+        const prefixLengthEntry = `'${escapedNs}' => ${nsLength},`
+        if (!staticContent.includes(prefixLengthEntry)) {
+          // Find the section for this first character, or add a new one
+          const charSection = `'${firstChar}' =>`
+          if (staticContent.includes(charSection)) {
+            staticContent = staticContent.replace(
+              new RegExp(`('${firstChar}' =>\\s*array \\()`),
+              `$1\n            ${prefixLengthEntry}`
+            )
+          } else {
+            staticContent = staticContent.replace(
+              /public static \$prefixLengthsPsr4 = array \(/,
+              `public static $prefixLengthsPsr4 = array (\n        '${firstChar}' => \n        array (\n            ${prefixLengthEntry}\n        ),`
+            )
+          }
+        }
+      }
+    }
+
+    php.value.writeFile(psr4Path, psr4Content)
+    php.value.writeFile(staticPath, staticContent)
+    php.value.writeFile(classmapPath, classmapContent)
+
+    // Update installed.json to register the package
+    const installedPath = '/app/vendor/composer/installed.json'
+    try {
+      const installed = JSON.parse(php.value.readFileAsText(installedPath))
+      const packages = installed.packages ?? installed
+      const alreadyInstalled = packages.some((p: any) => p.name === packageName)
+      if (!alreadyInstalled) {
+        packages.push({
+          name: packageName,
+          version: pkgComposer.version || 'dev-main',
+          type: pkgComposer.type || 'library',
+          autoload: pkgComposer.autoload || {},
+          extra: pkgComposer.extra || {},
+        })
+        if (installed.packages) {
+          installed.packages = packages
+        }
+        php.value.writeFile(installedPath, JSON.stringify(installed, null, 4))
+      }
+    } catch { /* installed.json may not exist */ }
+
+    return registered
   }
 
   async function runComposerRequire(packageName: string): Promise<{ output: string; errors: string }> {
@@ -252,7 +355,10 @@ export function usePhp() {
       composerJson.require[packageName] = `^${version.replace(/^v/, '')}`
       php.value.writeFile(composerJsonPath, JSON.stringify(composerJson, null, 4))
 
-      // 5. Dump autoload
+      // 5. Register PSR-4 autoload entries from the package
+      const registered = registerPackageAutoload(packageName, vendorBase)
+
+      // 6. Dump autoload
       const autoloadResult = await dumpAutoload()
 
       vfsVersion.value++
@@ -260,6 +366,12 @@ export function usePhp() {
       let output = `Package ${packageName}@${version} installed successfully.\n`
       output += `Extracted ${fileCount} files to vendor/${vendor}/${name}/\n`
       output += `Updated composer.json\n`
+      if (registered.length) {
+        output += `Registered autoload:\n`
+        for (const r of registered) {
+          output += `  ${r}\n`
+        }
+      }
       if (autoloadResult.output) {
         output += autoloadResult.output
       }
