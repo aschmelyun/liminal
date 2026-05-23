@@ -3,6 +3,14 @@
 /* Class-based dark mode for Tailwind v4 */
 @custom-variant dark (&:where(.dark, .dark *));
 
+:root {
+    color-scheme: light;
+}
+
+:root.dark {
+    color-scheme: dark;
+}
+
 @utility loader-spin {
     animation: spin 0.8s linear infinite;
 }
