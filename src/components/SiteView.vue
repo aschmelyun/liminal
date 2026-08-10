@@ -3,6 +3,7 @@ import { ref, watch } from 'vue'
 import { ExternalLink, RotateCw } from 'lucide-vue-next'
 import { usePhp } from '../composables/usePhp'
 import { Button } from '@/components/ui/button'
+import RouteCombobox from './RouteCombobox.vue'
 
 const { navigateTo, booted } = usePhp()
 
@@ -38,6 +39,12 @@ async function go() {
   }
 }
 
+/** Picked from the route dropdown — v-model has already landed, so just load it. */
+function goTo(uri: string) {
+  route.value = uri
+  go()
+}
+
 /** Pop the rendered response into a real tab so it can be inspected normally. */
 function openInNewTab() {
   if (!lastHtml.value) return
@@ -55,16 +62,7 @@ defineExpose({ refresh: go })
   <div class="flex min-h-0 flex-1 flex-col">
     <div class="flex h-9 shrink-0 items-center gap-1.5 border-b bg-panel px-2">
       <form class="flex min-w-0 flex-1 items-center gap-1.5" @submit.prevent="go">
-        <input
-          v-model="route"
-          type="text"
-          spellcheck="false"
-          autocapitalize="off"
-          autocorrect="off"
-          aria-label="Route to request"
-          placeholder="/"
-          class="h-7 min-w-0 max-w-lg flex-1 rounded-md border border-input bg-background px-2 font-mono text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        />
+        <RouteCombobox v-model="route" :disabled="!booted" @select="goTo" />
         <Button type="submit" variant="ghost" size="icon" class="size-7" :disabled="loading" aria-label="Reload route">
           <RotateCw class="size-3.5" :class="loading && 'animate-spin'" />
         </Button>
