@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useGlyphs } from '../composables/useGlyphs'
 
 const props = defineProps<{
   progress: number
   status: string
+  log: string[]
   failed: boolean
 }>()
 
@@ -14,47 +15,76 @@ const pointerEvents = ref<'auto' | 'none'>('auto')
 
 const pct = computed(() => Math.round(props.progress * 100))
 
-onMounted(() => {
-  start()
-})
+onMounted(start)
 
 watch(() => props.progress, (val) => {
-  if (val >= 1 && !props.failed) {
-    setTimeout(() => {
-      stop()
-      opacity.value = 0
-      pointerEvents.value = 'none'
-    }, 400)
-  }
+  if (val < 1 || props.failed) return
+  setTimeout(() => {
+    stop()
+    opacity.value = 0
+    pointerEvents.value = 'none'
+  }, 400)
+})
+
+watch(() => props.failed, (failed) => {
+  if (failed) stop()
 })
 </script>
 
 <template>
   <div
-    class="fixed inset-0 z-[100] flex items-center justify-center bg-stone-100 dark:bg-stone-950 transition-opacity duration-500"
+    class="fixed inset-0 z-100 flex items-center justify-center bg-panel transition-opacity duration-500"
     :style="{ opacity, pointerEvents }"
   >
     <div
-      class="absolute inset-0 overflow-hidden font-mono text-sm leading-5 text-stone-200 dark:text-stone-800 select-none whitespace-pre"
+      class="pointer-events-none absolute inset-0 select-none overflow-hidden whitespace-pre font-mono text-sm leading-5 text-foreground/[0.06]"
       aria-hidden="true"
     >{{ glyphText }}</div>
+
     <div
-      class="relative bg-white dark:bg-stone-900 rounded-2xl shadow-lg border border-stone-200 dark:border-stone-700 px-8 py-6 w-80 flex flex-col items-center gap-4"
-      :class="{ 'border-red-300 dark:border-red-700': failed }"
+      class="relative flex w-[24rem] max-w-[calc(100vw-2rem)] flex-col rounded-xl border bg-background shadow-lg"
+      :class="failed && 'border-destructive/50'"
     >
-      <span class="text-3xl text-stone-800 dark:text-stone-100" style="font-family: 'Jacquard 24', serif;">Liminal</span>
-      <div class="w-full">
-        <div class="flex items-center justify-between mb-1.5">
-          <span class="text-xs text-stone-500 dark:text-stone-400">{{ status }}</span>
-          <span v-if="progress > 0" class="text-xs font-mono text-stone-400 dark:text-stone-500">{{ pct }}%</span>
+      <div class="px-6 pt-6">
+        <div class="flex items-baseline justify-between">
+          <span class="text-3xl leading-none text-foreground" style="font-family: 'Jacquard 24', serif;">Liminal</span>
+          <span class="font-mono text-[11px] text-muted-foreground">PHP 8.4 · WASM</span>
         </div>
-        <div class="w-full h-1.5 bg-stone-100 dark:bg-stone-800 rounded-full overflow-hidden">
+      </div>
+
+      <div class="px-6 pt-5">
+        <div class="mb-2 flex items-baseline justify-between gap-3">
+          <span
+            class="truncate text-xs"
+            :class="failed ? 'text-destructive' : 'text-muted-foreground'"
+          >{{ failed ? 'Boot failed — check the browser console' : status }}</span>
+          <span v-if="progress > 0 && !failed" class="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">{{ pct }}%</span>
+        </div>
+        <div class="h-1 w-full overflow-hidden rounded-full bg-muted">
           <div
-            class="h-full bg-rose-500 rounded-full transition-all duration-200 ease-out"
-            :style="{ width: `${pct}%` }"
+            class="h-full rounded-full transition-[width] duration-200 ease-out"
+            :class="failed ? 'bg-destructive' : 'bg-brand'"
+            :style="{ width: `${failed ? 100 : pct}%` }"
           ></div>
+        </div>
+      </div>
+
+      <!-- Files streaming into the virtual filesystem, newest at the bottom. -->
+      <div
+        class="relative h-[240px] overflow-hidden px-6 pb-5 pt-3"
+        aria-hidden="true"
+      >
+        <div class="boot-log flex h-full flex-col justify-end gap-px font-mono text-[10px] leading-[15px] text-muted-foreground">
+          <div v-for="(line, i) in log" :key="`${i}-${line}`" class="truncate">{{ line }}</div>
         </div>
       </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.boot-log {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 65%);
+  mask-image: linear-gradient(to bottom, transparent 0%, black 65%);
+}
+</style>

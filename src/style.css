@@ -3,9 +3,17 @@
 /* Class-based dark mode for Tailwind v4 */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/*
+ * Two surface levels:
+ *   --background  content (editor, preview, terminal output)
+ *   --panel       chrome (header, sidebars, toolbars)
+ * Light mode tints the chrome; dark mode lifts it. Content is always the
+ * extreme so the thing you're working on has the most contrast.
+ */
 :root {
     --background: oklch(1 0 0);
     --foreground: oklch(0.216 0.006 56.043);
+    --panel: oklch(0.985 0.001 106.423);
     --card: oklch(1 0 0);
     --card-foreground: oklch(0.216 0.006 56.043);
     --popover: oklch(1 0 0);
@@ -20,15 +28,24 @@
     --accent-foreground: oklch(0.216 0.006 56.043);
     --border: oklch(0.923 0.003 48.717);
     --input: oklch(0.923 0.003 48.717);
-    --ring: oklch(0.709 0.01 56.259);
+
+    /* Semantic state — used for output, never for decoration */
+    --destructive: oklch(0.577 0.245 27.325);
+    --success: oklch(0.63 0.15 162.48);
+
+    /* Brand accent. Reserved for identity, progress and focus. */
+    --brand: oklch(0.645 0.207 16.44);
+    --brand-foreground: oklch(0.985 0.001 106.423);
+    --ring: oklch(0.645 0.207 16.44);
 }
 
 .dark {
-    --background: oklch(0.216 0.006 56.043);
+    --background: oklch(0.165 0.004 49.25);
     --foreground: oklch(0.985 0.001 106.423);
-    --card: oklch(0.268 0.007 34.298);
+    --panel: oklch(0.216 0.006 56.043);
+    --card: oklch(0.216 0.006 56.043);
     --card-foreground: oklch(0.985 0.001 106.423);
-    --popover: oklch(0.268 0.007 34.298);
+    --popover: oklch(0.238 0.006 56.043);
     --popover-foreground: oklch(0.985 0.001 106.423);
     --primary: oklch(0.923 0.003 48.717);
     --primary-foreground: oklch(0.216 0.006 56.043);
@@ -36,16 +53,23 @@
     --secondary-foreground: oklch(0.985 0.001 106.423);
     --muted: oklch(0.268 0.007 34.298);
     --muted-foreground: oklch(0.709 0.01 56.259);
-    --accent: oklch(0.268 0.007 34.298);
+    --accent: oklch(0.279 0.007 34.298);
     --accent-foreground: oklch(0.985 0.001 106.423);
-    --border: oklch(0.374 0.01 67.558);
-    --input: oklch(0.374 0.01 67.558);
-    --ring: oklch(0.553 0.013 58.071);
+    --border: oklch(0.315 0.008 56);
+    --input: oklch(0.315 0.008 56);
+
+    --destructive: oklch(0.704 0.191 22.216);
+    --success: oklch(0.696 0.17 162.48);
+
+    --brand: oklch(0.68 0.19 16.44);
+    --brand-foreground: oklch(0.16 0.004 49.25);
+    --ring: oklch(0.68 0.19 16.44);
 }
 
 @theme inline {
     --color-background: var(--background);
     --color-foreground: var(--foreground);
+    --color-panel: var(--panel);
     --color-card: var(--card);
     --color-card-foreground: var(--card-foreground);
     --color-popover: var(--popover);
@@ -61,10 +85,10 @@
     --color-border: var(--border);
     --color-input: var(--input);
     --color-ring: var(--ring);
-}
-
-@utility loader-spin {
-    animation: spin 0.8s linear infinite;
+    --color-destructive: var(--destructive);
+    --color-success: var(--success);
+    --color-brand: var(--brand);
+    --color-brand-foreground: var(--brand-foreground);
 }
 
 /* CodeMirror fills its container */
@@ -76,92 +100,51 @@
     overflow: auto;
 }
 
+.editor-container .cm-editor.cm-focused {
+    outline: none;
+}
+
 @media (max-width: 767px) {
     .editor-container .cm-content {
         font-size: 12px;
     }
 }
 
-/* Agent panel message styles */
-.agent-msg-user {
-    border-left: 3px solid #a8a29e;
-    padding-left: 0.75rem;
-    margin-bottom: 0.75rem;
-    color: #44403c;
-}
-
-.agent-msg-assistant {
-    margin-bottom: 0.75rem;
-    white-space: pre-wrap;
-    word-break: break-word;
+/*
+ * Markdown rendered from the agent stream. Lives here (not in a component)
+ * because the content is injected as an HTML string via v-html.
+ */
+.md-body {
     line-height: 1.7;
-    font-family: system-ui, -apple-system, sans-serif;
+    word-break: break-word;
 }
 
-.agent-msg-assistant pre {
-    background: #1e1e1e;
-    color: #d4d4d4;
+.md-body pre {
+    background: var(--muted);
+    border: 1px solid var(--border);
+    color: var(--foreground);
     padding: 0.75rem;
-    border-radius: 0.375rem;
+    border-radius: 0.5rem;
     overflow-x: auto;
     white-space: pre;
-    margin: 0.5rem 0;
+    margin: 0.625rem 0;
     font-size: 0.8125rem;
+    line-height: 1.6;
 }
 
-.agent-msg-assistant code:not(pre code) {
-    background: #f5f5f4;
-    padding: 0.125rem 0.375rem;
+.md-body code:not(pre code) {
+    background: var(--muted);
+    border: 1px solid var(--border);
+    padding: 0.0625rem 0.3125rem;
     border-radius: 0.25rem;
     font-size: 0.8125rem;
 }
 
-.agent-msg-tool {
-    margin-bottom: 0.5rem;
-    padding: 0.5rem 0.75rem;
-    background: #fafaf9;
-    border: 1px solid #e7e5e4;
-    border-radius: 0.375rem;
-    font-size: 0.75rem;
-    color: #78716c;
-}
-
-.agent-msg-tool .tool-name {
-    font-weight: 600;
-    color: #57534e;
-}
-
-/* Dark mode overrides for custom agent message classes */
-.dark .agent-msg-user {
-    border-left-color: #57534e;
-    color: #d6d3d1;
-}
-
-.dark .agent-msg-assistant code:not(pre code) {
-    background: #292524;
-    color: #d6d3d1;
-}
-
-.dark .agent-msg-tool {
-    background: #1c1917;
-    border-color: #44403c;
-    color: #a8a29e;
-}
-
-.dark .agent-msg-tool .tool-name {
-    color: #d6d3d1;
-}
-
 /* Extra bottom padding for Safari's floating address bar */
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
-    .panel-terminal-input,
-    .panel-agent-input {
-        padding-bottom: calc(2rem + env(safe-area-inset-bottom, 0px));
-    }
-    @media (min-width: 768px) {
-        .panel-terminal-input,
-        .panel-agent-input {
-            padding-bottom: 0.75rem;
+    @media (max-width: 767px) {
+        .safe-bottom {
+            padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
         }
     }
 }

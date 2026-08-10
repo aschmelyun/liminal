@@ -1,91 +1,67 @@
 <script setup lang="ts">
-import { ref, nextTick, onMounted } from 'vue'
+import { computed, nextTick, ref } from 'vue'
+import { ArrowUp, Bot, Eraser, KeyRound } from 'lucide-vue-next'
 import { usePhp } from '../composables/usePhp'
+import { MODEL_OPTIONS, useAgentSettings } from '../composables/useAgentSettings'
+import { Button } from '@/components/ui/button'
 
 const {
-  php, readFile, writeFile, listFiles, fileExists, isDir, mkdir,
-  runArtisan, collectVfsPaths,
+  readFile, writeFile, listFiles, fileExists, isDir, mkdir, runArtisan,
 } = usePhp()
 
-const apiKey = ref('')
-const model = ref('gpt-5.2')
+const { apiKey, model } = useAgentSettings()
+
+const emit = defineEmits<{ openSettings: [] }>()
+
+type EntryRole = 'user' | 'assistant' | 'tool' | 'error' | 'usage'
+
+interface Entry {
+  role: EntryRole
+  /** Plain text for user/tool/error/usage; rendered markdown HTML for assistant. */
+  body: string
+  label?: string
+}
+
+const entries = ref<Entry[]>([])
+const input = ref('')
+const running = ref(false)
 const outputEl = ref<HTMLDivElement | null>(null)
-const inputValue = ref('')
-const agentRunning = ref(false)
 
-interface OutputEntry {
-  role: 'user' | 'assistant' | 'tool'
-  html: string
-}
+const hasKey = computed(() => apiKey.value.trim().length > 0)
+const started = computed(() => entries.value.length > 0)
 
-const outputEntries = ref<OutputEntry[]>([])
-const showPlaceholder = ref(true)
-
-let agentMessages: any[] = []
-
-const modelOptions = [
-  'gpt-5.2',
-  'gpt-5.2-pro',
-  'gpt-5.1',
-  'gpt-5',
-  'gpt-5-mini',
-  'gpt-5-nano',
-  'gpt-4.1',
-]
-
-onMounted(() => {
-  const savedKey = localStorage.getItem('liminal-agent-api-key')
-  const savedModel = localStorage.getItem('liminal-agent-model')
-  if (savedKey) apiKey.value = savedKey
-  if (savedModel) model.value = savedModel
-})
-
-function onApiKeyInput() {
-  localStorage.setItem('liminal-agent-api-key', apiKey.value)
-}
-
-function onModelChange() {
-  localStorage.setItem('liminal-agent-model', model.value)
-}
+let conversation: any[] = []
 
 function escapeHtml(str: string) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
 function renderMarkdown(text: string) {
-  // Code blocks: ```lang\n...\n```
-  text = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_: string, lang: string, code: string) => {
+  let out = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_: string, lang: string, code: string) => {
     let highlighted = escapeHtml(code.trimEnd())
     if (lang && (self as any).hljs) {
       try {
-        const result = (self as any).hljs.highlight(code.trimEnd(), { language: lang, ignoreIllegals: true })
-        highlighted = result.value
-      } catch (_) {}
+        highlighted = (self as any).hljs.highlight(code.trimEnd(), { language: lang, ignoreIllegals: true }).value
+      } catch { /* fall back to the escaped source */ }
     }
     return `<pre><code class="${lang ? `hljs language-${lang}` : ''}">${highlighted}</code></pre>`
   })
-  // Inline code
-  text = text.replace(/`([^`]+)`/g, '<code>$1</code>')
-  // Bold
-  text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-  return text
+  out = out.replace(/`([^`]+)`/g, (_, code) => `<code>${escapeHtml(code)}</code>`)
+  out = out.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+  return out
 }
 
-function appendEntry(role: OutputEntry['role'], html: string) {
-  showPlaceholder.value = false
-  outputEntries.value.push({ role, html })
+function append(role: EntryRole, body: string, label?: string) {
+  entries.value.push({ role, body, label })
   scrollToBottom()
 }
 
 function scrollToBottom() {
   nextTick(() => {
-    if (outputEl.value) {
-      outputEl.value.scrollTop = outputEl.value.scrollHeight
-    }
+    if (outputEl.value) outputEl.value.scrollTop = outputEl.value.scrollHeight
   })
 }
 
-// Tool definitions for OpenAI
 const AGENT_TOOLS = [
   {
     type: 'function',
@@ -94,9 +70,7 @@ const AGENT_TOOLS = [
       description: 'Read the contents of a file. Path is relative to the Laravel project root (e.g. "routes/web.php").',
       parameters: {
         type: 'object',
-        properties: {
-          path: { type: 'string', description: 'File path relative to project root' },
-        },
+        properties: { path: { type: 'string', description: 'File path relative to project root' } },
         required: ['path'],
       },
     },
@@ -123,9 +97,7 @@ const AGENT_TOOLS = [
       description: 'List files and directories in a directory. Path is relative to the Laravel project root. Use "" or "." for the root.',
       parameters: {
         type: 'object',
-        properties: {
-          directory: { type: 'string', description: 'Directory path relative to project root' },
-        },
+        properties: { directory: { type: 'string', description: 'Directory path relative to project root' } },
         required: ['directory'],
       },
     },
@@ -137,9 +109,7 @@ const AGENT_TOOLS = [
       description: 'Run a Laravel Artisan command. Do not include "php artisan" prefix — just the command and arguments (e.g. "make:model Post -m").',
       parameters: {
         type: 'object',
-        properties: {
-          command: { type: 'string', description: 'Artisan command to run (without "php artisan" prefix)' },
-        },
+        properties: { command: { type: 'string', description: 'Artisan command to run (without "php artisan" prefix)' } },
         required: ['command'],
       },
     },
@@ -147,19 +117,18 @@ const AGENT_TOOLS = [
 ]
 
 async function executeAgentTool(name: string, args: any): Promise<string> {
-  const vfsBase = '/app'
+  const base = '/app'
 
   if (name === 'read_file') {
-    const vfsPath = `${vfsBase}/${args.path}`
     try {
-      return readFile(vfsPath)
-    } catch (e) {
+      return readFile(`${base}/${args.path}`)
+    } catch {
       return `Error: file not found — ${args.path}`
     }
   }
 
   if (name === 'write_file') {
-    const vfsPath = `${vfsBase}/${args.path}`
+    const vfsPath = `${base}/${args.path}`
     try {
       const parts = vfsPath.split('/').slice(1, -1)
       let dir = ''
@@ -175,13 +144,11 @@ async function executeAgentTool(name: string, args: any): Promise<string> {
   }
 
   if (name === 'list_files') {
-    const dir = args.directory && args.directory !== '.' ? `${vfsBase}/${args.directory}` : vfsBase
+    const dir = args.directory && args.directory !== '.' ? `${base}/${args.directory}` : base
     try {
-      const entries = listFiles(dir)
-      return entries.map((name: string) => {
-        const full = `${dir}/${name}`
-        return isDir(full) ? `${name}/` : name
-      }).join('\n')
+      return listFiles(dir)
+        .map((entry: string) => (isDir(`${dir}/${entry}`) ? `${entry}/` : entry))
+        .join('\n')
     } catch (e: any) {
       return `Error listing directory: ${e.message}`
     }
@@ -202,36 +169,31 @@ async function executeAgentTool(name: string, args: any): Promise<string> {
 const EXCLUDED_TREE_DIRS = new Set(['vendor', 'node_modules', '.git', 'storage'])
 
 function collectProjectTree(dir: string, depth = 0): string[] {
-  const lines: string[] = []
+  const out: string[] = []
   try {
-    const entries = listFiles(dir)
-    for (const name of entries) {
+    for (const name of listFiles(dir)) {
       const full = `${dir}/${name}`
-      if (isDir(full)) {
-        if (depth === 0 && EXCLUDED_TREE_DIRS.has(name)) {
-          lines.push(`${name}/  (excluded)`)
-        } else {
-          lines.push(`${name}/`)
-          if (depth < 3) {
-            lines.push(...collectProjectTree(full, depth + 1).map(l => '  ' + l))
-          }
-        }
-      } else {
-        lines.push(name)
+      if (!isDir(full)) {
+        out.push(name)
+        continue
       }
+      if (depth === 0 && EXCLUDED_TREE_DIRS.has(name)) {
+        out.push(`${name}/  (excluded)`)
+        continue
+      }
+      out.push(`${name}/`)
+      if (depth < 3) out.push(...collectProjectTree(full, depth + 1).map(l => '  ' + l))
     }
-  } catch (_) {}
-  return lines
+  } catch { /* unreadable directory */ }
+  return out
 }
 
 function buildSystemPrompt() {
-  const fileTree = collectProjectTree('/app')
-
   return `You are an AI assistant embedded in Liminal, a browser-based Laravel 12 IDE running PHP 8.4 via WebAssembly.
 
 Environment:
 - Laravel 12 with PHP 8.4 (compiled to WASM, runs entirely in the browser)
-- SQLite database (in-memory)
+- SQLite database at database/database.sqlite
 - No network access from PHP — no external HTTP requests, no Composer
 - The virtual filesystem is at /app/ (a standard Laravel project)
 
@@ -249,10 +211,9 @@ Guidelines:
 - After making changes, give a brief summary in one sentence (two at most). Do not list every file you touched or repeat what the tools already showed.
 
 Project structure (vendor, node_modules, storage, .git excluded — use list_files to explore them if needed):
-${fileTree.join('\n')}`
+${collectProjectTree('/app').join('\n')}`
 }
 
-// SSE stream processor
 interface ToolCallAccum {
   id: string
   name: string
@@ -264,9 +225,8 @@ async function processStream(response: Response) {
   const decoder = new TextDecoder()
   let buffer = ''
 
-  // Create a streaming assistant message entry
-  const entryIndex = outputEntries.value.length
-  appendEntry('assistant', '')
+  const entryIndex = entries.value.length
+  append('assistant', '')
   let accumulated = ''
 
   const toolCalls: Record<number, ToolCallAccum> = {}
@@ -277,16 +237,16 @@ async function processStream(response: Response) {
     if (done) break
 
     buffer += decoder.decode(value, { stream: true })
-    const lines = buffer.split('\n')
-    buffer = lines.pop()!
+    const chunks = buffer.split('\n')
+    buffer = chunks.pop()!
 
-    for (const line of lines) {
+    for (const line of chunks) {
       if (!line.startsWith('data: ')) continue
       const data = line.slice(6)
       if (data === '[DONE]') continue
 
       let parsed: any
-      try { parsed = JSON.parse(data) } catch (_) { continue }
+      try { parsed = JSON.parse(data) } catch { continue }
 
       if (parsed.usage) {
         usage = { prompt_tokens: parsed.usage.prompt_tokens, completion_tokens: parsed.usage.completion_tokens }
@@ -297,71 +257,70 @@ async function processStream(response: Response) {
 
       if (delta.content) {
         accumulated += delta.content
-        outputEntries.value[entryIndex]!.html = renderMarkdown(accumulated)
+        entries.value[entryIndex]!.body = renderMarkdown(accumulated)
         scrollToBottom()
       }
 
       if (delta.tool_calls) {
-        for (const tc of delta.tool_calls) {
-          const idx = tc.index
-          if (!toolCalls[idx]) {
-            toolCalls[idx] = { id: '', name: '', arguments: '' }
-          }
-          if (tc.id) toolCalls[idx].id = tc.id
-          if (tc.function?.name) toolCalls[idx].name = tc.function.name
-          if (tc.function?.arguments) toolCalls[idx].arguments += tc.function.arguments
+        for (const call of delta.tool_calls) {
+          const idx = call.index
+          if (!toolCalls[idx]) toolCalls[idx] = { id: '', name: '', arguments: '' }
+          if (call.id) toolCalls[idx].id = call.id
+          if (call.function?.name) toolCalls[idx].name = call.function.name
+          if (call.function?.arguments) toolCalls[idx].arguments += call.function.arguments
         }
       }
     }
   }
 
-  // Finalize the message
-  outputEntries.value[entryIndex]!.html = renderMarkdown(accumulated)
-  const toolCallList = Object.values(toolCalls)
-  return { content: accumulated, toolCalls: toolCallList, usage }
+  entries.value[entryIndex]!.body = renderMarkdown(accumulated)
+  // An empty turn that only produced tool calls leaves a blank bubble behind.
+  if (!accumulated) entries.value.splice(entryIndex, 1)
+
+  return { content: accumulated, toolCalls: Object.values(toolCalls), usage }
+}
+
+function toolLabel(name: string, args: any) {
+  if (name === 'run_artisan') return `artisan ${args.command || ''}`
+  if (name === 'write_file') return `write ${args.path || ''}`
+  if (name === 'read_file') return `read ${args.path || ''}`
+  if (name === 'list_files') return `ls ${args.directory || '/'}`
+  return name
 }
 
 async function agentLoop() {
   const key = apiKey.value.trim()
-  const mdl = model.value
+  const systemPrompt = buildSystemPrompt()
   let totalInput = 0
   let totalOutput = 0
-  const systemPrompt = buildSystemPrompt()
 
   while (true) {
     let response: Response
     try {
       response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${key}`,
-        },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
         body: JSON.stringify({
-          model: mdl,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            ...agentMessages,
-          ],
+          model: model.value,
+          messages: [{ role: 'system', content: systemPrompt }, ...conversation],
           tools: AGENT_TOOLS,
           stream: true,
           stream_options: { include_usage: true },
         }),
       })
     } catch (e: any) {
-      appendEntry('tool', `<span class="text-red-600">Network error: ${escapeHtml(e.message)}</span>`)
+      append('error', `Network error: ${e.message}`)
       return
     }
 
     if (!response.ok) {
-      let errMsg: string
+      let message: string
       try {
-        const err = await response.json()
-        errMsg = err.error?.message || response.statusText
-      } catch (_) {
-        errMsg = response.statusText
+        message = (await response.json()).error?.message || response.statusText
+      } catch {
+        message = response.statusText
       }
-      appendEntry('tool', `<span class="text-red-600">API error (${response.status}): ${escapeHtml(errMsg)}</span>`)
+      append('error', `API error (${response.status}): ${message}`)
       return
     }
 
@@ -372,204 +331,155 @@ async function agentLoop() {
     }
 
     const assistantMsg: any = { role: 'assistant', content: content || null }
-    if (toolCalls.length > 0) {
-      assistantMsg.tool_calls = toolCalls.map((tc: ToolCallAccum) => ({
-        id: tc.id,
+    if (toolCalls.length) {
+      assistantMsg.tool_calls = toolCalls.map(call => ({
+        id: call.id,
         type: 'function',
-        function: { name: tc.name, arguments: tc.arguments },
+        function: { name: call.name, arguments: call.arguments },
       }))
     }
-    agentMessages.push(assistantMsg)
+    conversation.push(assistantMsg)
 
-    if (toolCalls.length === 0) {
-      if (totalInput > 0 || totalOutput > 0) {
-        appendEntry('tool', `<span class="text-stone-400 text-xs">Tokens — input: ${totalInput.toLocaleString()} / output: ${totalOutput.toLocaleString()}</span>`)
+    if (!toolCalls.length) {
+      if (totalInput || totalOutput) {
+        append('usage', `${totalInput.toLocaleString()} in · ${totalOutput.toLocaleString()} out`)
       }
       return
     }
 
-    for (const tc of toolCalls) {
+    for (const call of toolCalls) {
       let args: any
-      try { args = JSON.parse(tc.arguments) } catch (_) { args = {} }
+      try { args = JSON.parse(call.arguments) } catch { args = {} }
 
-      const toolLabel = tc.name === 'run_artisan' ? `artisan ${args.command || ''}` :
-        tc.name === 'write_file' ? `write ${args.path || ''}` :
-        tc.name === 'read_file' ? `read ${args.path || ''}` :
-        tc.name === 'list_files' ? `ls ${args.directory || '/'}` : tc.name
-      appendEntry('tool', `<span class="tool-name">${escapeHtml(toolLabel)}</span>`)
+      const result = await executeAgentTool(call.name, args)
+      const preview = result.length > 300 ? result.slice(0, 300) + '…' : result
+      append('tool', preview, toolLabel(call.name, args))
 
-      const result = await executeAgentTool(tc.name, args)
-
-      const preview = result.length > 300 ? result.slice(0, 300) + '...' : result
-      appendEntry('tool', `<pre class="whitespace-pre-wrap text-xs mt-1">${escapeHtml(preview)}</pre>`)
-
-      const maxToolResult = 10000
-      const truncatedResult = result.length > maxToolResult
-        ? result.slice(0, maxToolResult) + `\n... (truncated, ${result.length} chars total)`
-        : result
-
-      agentMessages.push({
+      const MAX_TOOL_RESULT = 10000
+      conversation.push({
         role: 'tool',
-        tool_call_id: tc.id,
-        content: truncatedResult,
+        tool_call_id: call.id,
+        content: result.length > MAX_TOOL_RESULT
+          ? result.slice(0, MAX_TOOL_RESULT) + `\n… (truncated, ${result.length} chars total)`
+          : result,
       })
     }
 
-    if (agentMessages.length > 20) {
-      // Find a safe cut point — never split a tool_calls/tool pair
-      let cut = agentMessages.length - 16
-      while (cut < agentMessages.length && agentMessages[cut]!.role === 'tool') {
-        cut++
-      }
-      agentMessages = agentMessages.slice(cut)
+    if (conversation.length > 20) {
+      // Never split a tool_calls message from its tool results.
+      let cut = conversation.length - 16
+      while (cut < conversation.length && conversation[cut]!.role === 'tool') cut++
+      conversation = conversation.slice(cut)
     }
   }
 }
 
-async function sendMessage() {
-  if (agentRunning.value) return
-  const trimmed = inputValue.value.trim()
-  if (!trimmed) return
+async function send() {
+  const message = input.value.trim()
+  if (running.value || !message) return
 
-  const key = apiKey.value.trim()
-  if (!key) {
-    appendEntry('tool', '<span class="text-red-600">Add your OpenAI API key above to get started.</span>')
+  if (!hasKey.value) {
+    append('error', 'Add an OpenAI API key in Settings to use the agent.')
     return
   }
 
-  agentRunning.value = true
-  appendEntry('user', escapeHtml(trimmed))
-  agentMessages.push({ role: 'user', content: trimmed })
+  running.value = true
+  append('user', message)
+  conversation.push({ role: 'user', content: message })
+  input.value = ''
 
   try {
     await agentLoop()
   } catch (e: any) {
-    appendEntry('tool', `<span class="text-red-600">Error: ${escapeHtml(e.message)}</span>`)
+    append('error', e.message)
     console.error(e)
   } finally {
-    agentRunning.value = false
-    inputValue.value = ''
+    running.value = false
   }
 }
 
 function clearChat() {
-  agentMessages = []
-  outputEntries.value = []
-  showPlaceholder.value = true
-}
-
-function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'Enter') sendMessage()
+  conversation = []
+  entries.value = []
 }
 </script>
 
 <template>
-  <div class="flex-1 flex flex-col min-h-0">
-    <!-- Initial hero screen -->
-    <template v-if="showPlaceholder">
-      <div class="flex-1 flex items-center justify-center px-6">
-        <div class="bg-white dark:bg-stone-900 rounded-2xl shadow-lg border border-stone-200 dark:border-stone-700 px-8 py-10 flex flex-col items-center w-full max-w-lg">
-          <h2 class="text-2xl font-semibold text-stone-700 dark:text-stone-200 mb-2">What do you want to build?</h2>
-          <p class="text-sm text-stone-400 dark:text-stone-500 mb-6">Describe what you're imagining and the agent will build it.</p>
-          <div class="w-full flex items-center gap-2">
-            <input
-              v-model="inputValue"
-              type="text"
-              spellcheck="false"
-              autocapitalize="off"
-              autocorrect="off"
-              placeholder="Add a blog with posts and comments..."
-              class="flex-1 px-3 py-2.5 text-sm bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-lg text-stone-700 dark:text-stone-200 outline-none focus:border-stone-400 dark:focus:border-stone-500 focus:bg-white dark:focus:bg-stone-700"
-              @keydown="onKeydown"
-            />
-            <button
-              class="px-4 py-2.5 text-sm font-medium text-white bg-rose-500 rounded-lg hover:bg-rose-600 shrink-0"
-              @click="sendMessage"
-            >Build</button>
-          </div>
-          <div class="flex items-center gap-3 mt-4">
-            <input
-              v-model="apiKey"
-              type="password"
-              placeholder="OpenAI API key"
-              class="px-2 py-1 text-xs font-mono bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-md text-stone-500 dark:text-stone-400 outline-none focus:border-stone-400 dark:focus:border-stone-500 focus:bg-white dark:focus:bg-stone-700 w-48"
-              @input="onApiKeyInput"
-            />
-            <select
-              v-model="model"
-              class="px-2 py-1 text-xs bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-md text-stone-500 dark:text-stone-400 outline-none focus:border-stone-400 dark:focus:border-stone-500"
-              @change="onModelChange"
-            >
-              <option v-for="m in modelOptions" :key="m" :value="m">{{ m }}</option>
-            </select>
-          </div>
-        </div>
-      </div>
-    </template>
+  <div class="flex min-h-0 flex-1 flex-col bg-background">
+    <div class="flex h-9 shrink-0 items-center gap-2 border-b bg-panel px-2">
+      <Bot class="size-3.5 shrink-0 text-muted-foreground" />
+      <select
+        v-model="model"
+        aria-label="Model"
+        class="h-7 rounded-md border border-input bg-background px-1.5 font-mono text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <option v-for="option in MODEL_OPTIONS" :key="option" :value="option">{{ option }}</option>
+      </select>
 
-    <!-- Chat layout (after first message) -->
-    <template v-else>
-      <!-- Settings bar -->
-      <div class="border-b border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 px-4 py-2 shrink-0 flex items-center gap-3 flex-wrap">
-        <input
-          v-model="apiKey"
-          type="password"
-          placeholder="OpenAI API key"
-          class="px-2 py-1 text-sm font-mono bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-md text-stone-700 dark:text-stone-200 outline-none focus:border-stone-400 dark:focus:border-stone-500 focus:bg-white dark:focus:bg-stone-700 w-52"
-          @input="onApiKeyInput"
-        />
-        <select
-          v-model="model"
-          class="px-2 py-1 text-sm bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-md text-stone-700 dark:text-stone-200 outline-none focus:border-stone-400 dark:focus:border-stone-500"
-          @change="onModelChange"
-        >
-          <option v-for="m in modelOptions" :key="m" :value="m">{{ m }}</option>
-        </select>
-        <button
-          class="px-2.5 py-1 text-xs font-medium text-stone-500 dark:text-stone-400 border border-stone-200 dark:border-stone-700 rounded-md hover:bg-stone-50 dark:hover:bg-stone-800 shrink-0"
-          @click="clearChat"
-        >Clear Chat</button>
-      </div>
-      <!-- Chat output -->
-      <div ref="outputEl" class="flex-1 overflow-y-auto p-4 text-sm">
-        <div
-          v-for="(entry, i) in outputEntries"
-          :key="i"
-          :class="{
-            'agent-msg-user': entry.role === 'user',
-            'agent-msg-assistant': entry.role === 'assistant',
-            'agent-msg-tool': entry.role === 'tool',
-          }"
-          v-html="entry.html"
-        ></div>
-      </div>
-      <!-- Chat input -->
-      <div class="panel-agent-input border-t border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 px-4 pt-3 pb-8 md:py-3 shrink-0 flex items-center gap-2">
-        <input
-          v-model="inputValue"
-          type="text"
-          spellcheck="false"
-          autocapitalize="off"
-          autocorrect="off"
-          placeholder="Add a blog with posts and comments..."
-          class="flex-1 px-2 py-1.5 text-sm bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-md text-stone-700 dark:text-stone-200 outline-none focus:border-stone-400 dark:focus:border-stone-500 focus:bg-white dark:focus:bg-stone-700"
-          :disabled="agentRunning"
-          @keydown="onKeydown"
-        />
-        <button
-          :disabled="agentRunning"
-          class="relative px-2.5 py-1.5 text-xs font-medium text-white bg-rose-500 rounded-md hover:bg-rose-600 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
-          @click="sendMessage"
-        >
-          <span :class="{ 'invisible': agentRunning }">Build</span>
-          <span v-if="agentRunning" class="absolute inset-0 flex items-center justify-center">
-            <svg class="animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-            </svg>
-          </span>
-        </button>
-      </div>
-    </template>
+      <button
+        v-if="!hasKey"
+        type="button"
+        class="flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-brand transition-colors hover:bg-accent"
+        @click="emit('openSettings')"
+      >
+        <KeyRound class="size-3.5" />
+        Add API key
+      </button>
+
+      <Button variant="ghost" size="sm" class="ml-auto h-7" :disabled="!started || running" @click="clearChat">
+        <Eraser class="size-3.5" />
+        Clear
+      </Button>
+    </div>
+
+    <div v-if="!started" class="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+      <h2 class="text-lg font-semibold">What do you want to build?</h2>
+      <p class="max-w-sm text-sm text-muted-foreground">
+        The agent reads and writes files in the sandbox and runs Artisan commands to put your feature together.
+      </p>
+      <button
+        v-if="!hasKey"
+        type="button"
+        class="text-xs text-brand underline-offset-4 hover:underline"
+        @click="emit('openSettings')"
+      >Add your OpenAI API key to get started</button>
+    </div>
+
+    <div v-else ref="outputEl" class="min-h-0 flex-1 space-y-3 overflow-y-auto p-4 text-sm">
+      <template v-for="(entry, i) in entries" :key="i">
+        <div v-if="entry.role === 'user'" class="border-l-2 border-brand pl-3 font-medium">{{ entry.body }}</div>
+
+        <div v-else-if="entry.role === 'assistant'" class="md-body" v-html="entry.body"></div>
+
+        <div v-else-if="entry.role === 'tool'" class="overflow-hidden rounded-md border bg-muted/40">
+          <div class="border-b px-2.5 py-1.5 font-mono text-xs font-medium">{{ entry.label }}</div>
+          <pre class="max-h-40 overflow-auto whitespace-pre-wrap px-2.5 py-1.5 font-mono text-[11px] leading-5 text-muted-foreground">{{ entry.body }}</pre>
+        </div>
+
+        <p v-else-if="entry.role === 'error'" class="rounded-md border border-destructive/40 px-2.5 py-1.5 text-xs text-destructive">
+          {{ entry.body }}
+        </p>
+
+        <p v-else class="font-mono text-[11px] text-muted-foreground">{{ entry.body }}</p>
+      </template>
+    </div>
+
+    <form class="safe-bottom flex shrink-0 items-center gap-2 border-t bg-panel px-3 py-2" @submit.prevent="send">
+      <input
+        v-model="input"
+        type="text"
+        spellcheck="false"
+        autocapitalize="off"
+        autocorrect="off"
+        aria-label="Message the agent"
+        placeholder="Add a blog with posts and comments…"
+        :disabled="running"
+        class="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/60 disabled:opacity-50"
+      />
+      <Button type="submit" size="icon" class="size-7 shrink-0" :disabled="running || !input.trim()" aria-label="Send">
+        <ArrowUp v-if="!running" class="size-3.5" />
+        <span v-else class="size-3 animate-spin rounded-full border-2 border-current border-t-transparent"></span>
+      </Button>
+    </form>
   </div>
 </template>

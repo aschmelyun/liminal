@@ -32,6 +32,7 @@ const sortedEntries = computed(() => {
     v-for="[name, subtree] in sortedEntries"
     :key="name"
     :name="name"
+    :path="`${parentPath}/${name}`"
     :is-dir="subtree !== null"
     :depth="depth"
     @select="emit('open-file', `${parentPath}/${name}`)"

@@ -1,92 +1,115 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+import { ExternalLink, RotateCw } from 'lucide-vue-next'
 import { usePhp } from '../composables/usePhp'
-import { ExternalLink } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 
 const { navigateTo, booted } = usePhp()
 
-watch(booted, (ready) => {
-  if (ready) go()
-}, { immediate: true })
+const route = ref('/')
+const loading = ref(false)
+const error = ref('')
+const srcdoc = ref('')
+const lastHtml = ref('')
 
-const routeInput = ref('/')
-const navigating = ref(false)
-const srcdoc = ref(`<div style="display:flex;align-items:center;justify-content:center;height:100%;font-family:system-ui;color:#a8a29e;">Loading...</div>`)
-
-const tailwindCdn = `<script src="https://unpkg.com/@tailwindcss/browser@4"><\/script>`
+const TAILWIND_CDN = '<script src="https://unpkg.com/@tailwindcss/browser@4"><\/script>'
 
 function injectTailwind(html: string): string {
-  if (html.includes('<head>')) {
-    return html.replace('<head>', `<head>${tailwindCdn}`)
-  }
-  return tailwindCdn + html
+  return html.includes('<head>')
+    ? html.replace('<head>', `<head>${TAILWIND_CDN}`)
+    : TAILWIND_CDN + html
 }
 
 async function go() {
-  if (navigating.value) return
-  navigating.value = true
-  const path = routeInput.value
-
-  srcdoc.value = `<div style="display:flex;align-items:center;justify-content:center;height:100%;font-family:system-ui;color:#a8a29e;">Loading ${path}...</div>`
+  if (loading.value) return
+  loading.value = true
+  error.value = ''
 
   try {
-    const html = await navigateTo(path)
-    srcdoc.value = html ? injectTailwind(html) : `<div style="display:flex;align-items:center;justify-content:center;height:100%;font-family:system-ui;color:#a8a29e;">No output from ${path}</div>`
+    const html = await navigateTo(route.value || '/')
+    lastHtml.value = html ? injectTailwind(html) : ''
+    srcdoc.value = lastHtml.value
+    if (!html) error.value = `${route.value} returned an empty response.`
   } catch (err: any) {
-    srcdoc.value = `<div style="padding:2rem;font-family:system-ui;"><h2 style="color:#dc2626;margin:0 0 1rem;">Error</h2><pre style="background:#fef2f2;padding:1rem;border-radius:0.5rem;overflow:auto;color:#991b1b;font-size:0.875rem;">${err.message}</pre></div>`
+    error.value = err.message || 'Request failed'
     console.error(err)
   } finally {
-    navigating.value = false
+    loading.value = false
   }
 }
 
-function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'Enter') go()
+/** Pop the rendered response into a real tab so it can be inspected normally. */
+function openInNewTab() {
+  if (!lastHtml.value) return
+  const url = URL.createObjectURL(new Blob([lastHtml.value], { type: 'text/html' }))
+  window.open(url, '_blank', 'noreferrer')
+  setTimeout(() => URL.revokeObjectURL(url), 30_000)
 }
+
+watch(booted, (ready) => { if (ready) go() }, { immediate: true })
 
 defineExpose({ refresh: go })
 </script>
 
 <template>
-  <div class="min-h-0 flex-1 bg-muted/30 p-3">
-    <div class="flex h-full min-h-[300px] flex-col overflow-hidden rounded-lg border bg-muted/40">
-      <div class="flex h-10 shrink-0 items-center gap-2 border-b bg-background px-3">
-        <div class="size-2 rounded-full bg-muted-foreground/30" />
-        <div class="size-2 rounded-full bg-muted-foreground/30" />
-        <div class="size-2 rounded-full bg-muted-foreground/30" />
-        <div class="ml-2 flex min-w-0 flex-1 items-center gap-1.5">
-          <Input
-          v-model="routeInput"
+  <div class="flex min-h-0 flex-1 flex-col">
+    <div class="flex h-9 shrink-0 items-center gap-1.5 border-b bg-panel px-2">
+      <form class="flex min-w-0 flex-1 items-center gap-1.5" @submit.prevent="go">
+        <input
+          v-model="route"
           type="text"
           spellcheck="false"
-          class="h-7 min-w-0 flex-1 bg-muted font-mono text-[10px]"
-          :disabled="navigating"
-          @keydown="onKeydown"
-          />
-          <Button
-          variant="ghost"
-          size="icon"
-          class="size-7"
-          aria-label="Open preview in a new tab"
-          :disabled="navigating"
-          @click="go"
-          >
-            <ExternalLink class="size-3.5" />
-          </Button>
-        </div>
-        <Button
-          size="sm"
-          :disabled="navigating"
-          @click="go"
-        >{{ navigating ? 'Loading' : 'Run' }}</Button>
-      </div>
+          autocapitalize="off"
+          autocorrect="off"
+          aria-label="Route to request"
+          placeholder="/"
+          class="h-7 min-w-0 max-w-lg flex-1 rounded-md border border-input bg-background px-2 font-mono text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        />
+        <Button type="submit" variant="ghost" size="icon" class="size-7" :disabled="loading" aria-label="Reload route">
+          <RotateCw class="size-3.5" :class="loading && 'animate-spin'" />
+        </Button>
+      </form>
+
+      <Button
+        variant="ghost"
+        size="icon"
+        class="size-7"
+        :disabled="!lastHtml"
+        aria-label="Open rendered page in a new tab"
+        @click="openInNewTab"
+      >
+        <ExternalLink class="size-3.5" />
+      </Button>
+    </div>
+
+    <div class="relative min-h-0 flex-1">
       <iframe
+        v-show="!error"
         :srcdoc="srcdoc"
         title="Laravel application preview"
-        class="min-h-0 w-full flex-1 border-0 bg-white"
+        class="size-full border-0 bg-white"
       ></iframe>
+
+      <div v-if="error" class="flex size-full items-center justify-center p-6">
+        <div class="w-full max-w-lg rounded-lg border border-destructive/40 bg-background p-4">
+          <p class="text-sm font-medium text-destructive">Request failed</p>
+          <pre class="mt-2 overflow-x-auto whitespace-pre-wrap font-mono text-xs text-muted-foreground">{{ error }}</pre>
+        </div>
+      </div>
+
+      <div
+        v-if="loading"
+        class="pointer-events-none absolute inset-x-0 top-0 h-0.5 overflow-hidden bg-brand/20"
+      >
+        <div class="h-full w-1/3 animate-[preview-scan_1.1s_ease-in-out_infinite] bg-brand"></div>
+      </div>
     </div>
   </div>
 </template>
+
+<style>
+@keyframes preview-scan {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+</style>

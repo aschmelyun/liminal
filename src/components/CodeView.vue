@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { FileCode2, Save } from 'lucide-vue-next'
 import { usePhp } from '../composables/usePhp'
 import { useTheme } from '../composables/useTheme'
+import { useWorkspace } from '../composables/useWorkspace'
 import { Button } from '@/components/ui/button'
 import { EditorView, basicSetup } from 'codemirror'
 import { EditorState, Compartment } from '@codemirror/state'
@@ -15,18 +17,19 @@ import { css } from '@codemirror/lang-css'
 
 const { php, booted, readFile, writeFile, fileExists } = usePhp()
 const { isDark } = useTheme()
+const { activeFilePath } = useWorkspace()
 
-const editorThemeCompartment = new Compartment()
+const syntaxCompartment = new Compartment()
 
-const currentFilePath = ref<string | null>(null)
-const fileViewerPath = ref('Select a file')
-const saveDisabled = ref(true)
-const saveStatusText = ref('')
-const saveStatusVisible = ref(false)
+const dirty = ref(false)
+const saveNotice = ref('')
+const saveFailed = ref(false)
 
 let editorView: EditorView | null = null
 let savedContent = ''
 const editorContainer = ref<HTMLDivElement | null>(null)
+
+const relativePath = computed(() => activeFilePath.value?.replace(/^\/app\//, '') ?? '')
 
 const EXT_LANG: Record<string, () => any> = {
   php: () => phpLang(),
@@ -49,51 +52,52 @@ function getLangExtension(filePath: string) {
   return EXT_LANG[ext]?.() ?? []
 }
 
+/*
+ * Sits on top of the syntax theme so the editor chrome (background, gutters,
+ * selection, caret) tracks the app's design tokens in both themes.
+ */
+const chromeTheme = EditorView.theme({
+  '&': {
+    fontSize: '13px',
+    backgroundColor: 'var(--background)',
+    color: 'var(--foreground)',
+  },
+  '.cm-content': { lineHeight: '1.7', caretColor: 'var(--foreground)' },
+  '.cm-gutters': {
+    lineHeight: '1.7',
+    backgroundColor: 'var(--background)',
+    color: 'var(--muted-foreground)',
+    borderRight: '1px solid var(--border)',
+  },
+  '.cm-activeLine': { backgroundColor: 'color-mix(in oklch, var(--foreground) 4%, transparent)' },
+  '.cm-activeLineGutter': { backgroundColor: 'transparent', color: 'var(--foreground)' },
+  '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': {
+    backgroundColor: 'color-mix(in oklch, var(--brand) 28%, transparent)',
+  },
+  '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--brand)' },
+  '.cm-panels': { backgroundColor: 'var(--panel)', color: 'var(--foreground)' },
+})
+
 function createEditor(content: string, langExt: any) {
-  if (editorView) editorView.destroy()
+  editorView?.destroy()
   if (!editorContainer.value) return
-
-  const saveKeymap = keymap.of([{
-    key: 'Mod-s',
-    run: () => { saveFile(); return true },
-  }])
-
-  const updateListener = EditorView.updateListener.of((update) => {
-    if (!update.docChanged || !currentFilePath.value) return
-    const currentContent = update.state.doc.toString()
-    const modified = currentContent !== savedContent
-    saveDisabled.value = !modified
-    if (modified) {
-      saveStatusText.value = 'Modified'
-      saveStatusVisible.value = true
-    } else {
-      saveStatusVisible.value = false
-    }
-  })
-
-  const editorTheme = EditorView.theme({
-    '&': { fontSize: '14px' },
-    '.cm-content': { lineHeight: '1.7' },
-    '.cm-gutters': { lineHeight: '1.7' },
-  })
-
-  const extensions = [
-    basicSetup,
-    editorTheme,
-    saveKeymap,
-    updateListener,
-    EditorView.lineWrapping,
-    editorThemeCompartment.of(isDark.value ? oneDark : []),
-  ]
-
-  if (langExt) {
-    extensions.push(Array.isArray(langExt) ? langExt : langExt)
-  }
 
   editorView = new EditorView({
     state: EditorState.create({
       doc: content,
-      extensions,
+      extensions: [
+        basicSetup,
+        langExt,
+        keymap.of([{ key: 'Mod-s', run: () => { saveFile(); return true } }]),
+        EditorView.updateListener.of((update) => {
+          if (!update.docChanged) return
+          dirty.value = update.state.doc.toString() !== savedContent
+          saveNotice.value = ''
+        }),
+        EditorView.lineWrapping,
+        syntaxCompartment.of(isDark.value ? oneDark : []),
+        chromeTheme,
+      ],
     }),
     parent: editorContainer.value,
   })
@@ -103,71 +107,82 @@ function openFile(vfsPath: string) {
   if (!php.value) return
   try {
     const content = readFile(vfsPath)
-    const relPath = vfsPath.startsWith('/app/') ? vfsPath.slice(5) : vfsPath
-
-    currentFilePath.value = vfsPath
+    activeFilePath.value = vfsPath
     savedContent = content
-    fileViewerPath.value = relPath
-    saveDisabled.value = true
-    saveStatusVisible.value = false
-
-    const langExt = getLangExtension(vfsPath)
-    createEditor(content, langExt)
+    dirty.value = false
+    saveNotice.value = ''
+    saveFailed.value = false
+    createEditor(content, getLangExtension(vfsPath))
   } catch (err) {
     console.error('Failed to read file:', err)
   }
 }
 
 function saveFile() {
-  if (!php.value || !currentFilePath.value || !editorView) return
+  if (!activeFilePath.value || !editorView) return
   try {
     const content = editorView.state.doc.toString()
-    writeFile(currentFilePath.value, content)
+    writeFile(activeFilePath.value, content)
     savedContent = content
-    saveDisabled.value = true
-    saveStatusText.value = 'Saved'
-    saveStatusVisible.value = true
-    setTimeout(() => { saveStatusVisible.value = false }, 2000)
+    dirty.value = false
+    saveFailed.value = false
+    saveNotice.value = 'Saved'
+    setTimeout(() => { if (saveNotice.value === 'Saved') saveNotice.value = '' }, 2000)
   } catch (err) {
-    saveStatusText.value = 'Save failed'
-    saveStatusVisible.value = true
+    saveFailed.value = true
+    saveNotice.value = 'Save failed'
     console.error('Failed to save file:', err)
   }
 }
 
 watch(isDark, (dark) => {
-  editorView?.dispatch({
-    effects: editorThemeCompartment.reconfigure(dark ? oneDark : []),
-  })
+  editorView?.dispatch({ effects: syntaxCompartment.reconfigure(dark ? oneDark : []) })
 })
 
 function openDefaultFile() {
-  if (currentFilePath.value || !php.value) return
+  if (activeFilePath.value || !php.value) return
   const preferred = '/app/resources/views/welcome.blade.php'
-  if (fileExists(preferred)) {
-    openFile(preferred)
-  }
+  if (fileExists(preferred)) openFile(preferred)
 }
 
-watch(booted, (val) => {
-  if (val) openDefaultFile()
-})
-
+watch(booted, (ready) => { if (ready) openDefaultFile() })
 onMounted(openDefaultFile)
 
-// Expose for agent to call
 defineExpose({ openFile })
 </script>
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
-    <div class="flex shrink-0 items-center justify-between border-b bg-background px-3 py-2">
-        <span class="text-xs font-mono text-stone-500 dark:text-stone-400">{{ fileViewerPath }}</span>
-        <div class="flex items-center gap-2">
-          <span v-show="saveStatusVisible" class="text-xs text-stone-400 dark:text-stone-500">{{ saveStatusText }}</span>
-          <Button size="sm" :disabled="saveDisabled" @click="saveFile">Save</Button>
-        </div>
+    <div class="flex h-9 shrink-0 items-center gap-2 border-b bg-panel px-2">
+      <FileCode2 class="size-3.5 shrink-0 text-muted-foreground" />
+      <span class="min-w-0 truncate font-mono text-xs" :title="relativePath">
+        {{ relativePath || 'No file open' }}
+      </span>
+      <span
+        v-if="dirty"
+        class="size-1.5 shrink-0 rounded-full bg-brand"
+        title="Unsaved changes"
+        aria-label="Unsaved changes"
+      ></span>
+
+      <div class="ml-auto flex shrink-0 items-center gap-2">
+        <span
+          v-if="saveNotice"
+          class="text-xs"
+          :class="saveFailed ? 'text-destructive' : 'text-muted-foreground'"
+        >{{ saveNotice }}</span>
+        <Button size="sm" class="h-7" :disabled="!dirty" @click="saveFile">
+          <Save class="size-3.5" />
+          Save
+        </Button>
+      </div>
     </div>
-    <div ref="editorContainer" class="editor-container min-h-0 flex-1 overflow-hidden bg-background"></div>
+
+    <div v-show="activeFilePath" ref="editorContainer" class="editor-container min-h-0 flex-1 overflow-hidden bg-background"></div>
+
+    <div v-if="!activeFilePath" class="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 bg-background text-sm text-muted-foreground">
+      <FileCode2 class="size-5" />
+      <p>Pick a file from the explorer to start editing.</p>
+    </div>
   </div>
 </template>

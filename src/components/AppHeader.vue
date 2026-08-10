@@ -1,56 +1,74 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { CircleDot, MoreHorizontal, Play, RotateCcw } from 'lucide-vue-next'
-import HelpModal from './HelpModal.vue'
-import { Badge } from '@/components/ui/badge'
+import { Bot, Code2, Database, Github, Monitor, Moon, Settings, SquareTerminal, Sun } from 'lucide-vue-next'
+import { useTheme } from '../composables/useTheme'
 import { Button } from '@/components/ui/button'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { REPO_URL } from '../lib/links'
+import type { WorkspaceTab } from '../lib/tabs'
 
-const helpOpen = ref(false)
-const menuOpen = ref(false)
+defineProps<{ modelValue: WorkspaceTab }>()
+defineEmits<{ 'update:modelValue': [value: WorkspaceTab]; openSettings: [] }>()
 
-const emit = defineEmits<{
-  run: []
-  reset: []
-  openAgent: []
-}>()
+const { isDark, setTheme } = useTheme()
+
+const TABS = [
+  { value: 'preview', label: 'Preview', icon: Monitor },
+  { value: 'code', label: 'Code', icon: Code2 },
+  { value: 'terminal', label: 'Terminal', icon: SquareTerminal },
+  { value: 'database', label: 'Database', icon: Database },
+  { value: 'agent', label: 'Agent', icon: Bot },
+] as const
 </script>
 
 <template>
-  <header class="relative flex h-14 shrink-0 items-center border-b bg-background px-4">
-    <div class="flex min-w-0 items-center gap-3">
-      <div class="grid size-8 place-items-center rounded-md border bg-muted font-mono text-xs font-bold">L/</div>
-      <div class="min-w-0">
-        <div class="flex items-center gap-2">
-          <span class="truncate text-sm font-semibold">liminal</span>
-          <Badge variant="outline" class="h-5 rounded-sm px-1.5 font-mono text-[10px]">main</Badge>
-        </div>
-        <div class="truncate text-xs text-muted-foreground">Browser PHP sandbox</div>
-      </div>
+  <header class="flex h-12 shrink-0 items-center gap-2 border-b bg-panel pl-3 pr-2">
+    <div class="flex shrink-0 items-center gap-2.5">
+      <div class="grid size-6 shrink-0 place-items-center rounded bg-brand font-mono text-[11px] font-bold text-brand-foreground">L/</div>
+      <span class="hidden text-sm font-semibold tracking-tight sm:inline">liminal</span>
     </div>
 
-    <div class="ml-auto flex items-center gap-2">
-      <div class="mr-2 hidden items-center gap-2 text-xs text-muted-foreground md:flex">
-        <CircleDot class="size-3 fill-emerald-500 text-emerald-500" />
-        PHP 8.4 · running
-      </div>
-      <Button variant="outline" size="sm" @click="emit('reset')">
-        <RotateCcw />
-        Reset
-      </Button>
-      <Button size="sm" @click="emit('run')">
-        <Play />
-        Run
-      </Button>
-      <Button variant="ghost" size="icon" class="size-8" aria-label="More actions" @click="menuOpen = !menuOpen">
-        <MoreHorizontal />
-      </Button>
-    </div>
+    <Tabs
+      :model-value="modelValue"
+      class="mx-auto min-w-0"
+      @update:model-value="$emit('update:modelValue', $event as WorkspaceTab)"
+    >
+      <TabsList class="h-8 gap-0.5">
+        <TabsTrigger
+          v-for="tab in TABS"
+          :key="tab.value"
+          :value="tab.value"
+          class="gap-1.5 px-2 text-xs md:px-2.5"
+          :aria-label="tab.label"
+        >
+          <component :is="tab.icon" class="size-3.5" />
+          <span class="hidden md:inline">{{ tab.label }}</span>
+        </TabsTrigger>
+      </TabsList>
+    </Tabs>
 
-    <div v-if="menuOpen" class="absolute right-4 top-12 z-20 w-36 rounded-md border bg-popover p-1 text-sm text-popover-foreground shadow-md">
-      <button class="w-full rounded-sm px-2 py-1.5 text-left hover:bg-accent" @click="emit('openAgent'); menuOpen = false">Open Agent</button>
-      <button class="w-full rounded-sm px-2 py-1.5 text-left hover:bg-accent" @click="helpOpen = true; menuOpen = false">Help</button>
+    <div class="flex shrink-0 items-center gap-0.5">
+      <Button
+        variant="ghost"
+        size="icon"
+        class="size-8"
+        :aria-label="isDark ? 'Switch to light theme' : 'Switch to dark theme'"
+        @click="setTheme(isDark ? 'light' : 'dark')"
+      >
+        <Sun v-if="isDark" class="size-4" />
+        <Moon v-else class="size-4" />
+      </Button>
+      <a
+        :href="REPO_URL"
+        target="_blank"
+        rel="noreferrer"
+        aria-label="Liminal on GitHub"
+        class="hidden size-8 items-center justify-center rounded-md transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:inline-flex"
+      >
+        <Github class="size-4" />
+      </a>
+      <Button variant="ghost" size="icon" class="size-8" aria-label="Settings" @click="$emit('openSettings')">
+        <Settings class="size-4" />
+      </Button>
     </div>
   </header>
-
-  <HelpModal v-if="helpOpen" @close="helpOpen = false" />
 </template>

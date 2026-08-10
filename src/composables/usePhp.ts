@@ -11,22 +11,40 @@ const bootStatus = ref('Loading PHP runtime...')
 const vfsVersion = ref(0)
 const initialHashes = new Map<string, number>()
 
+// Rolling tail of paths written during boot, surfaced by the loading screen.
+const BOOT_LOG_LINES = 24
+const bootLog = ref<string[]>([])
+let bootLogPending: string[] = []
+let bootLogFlushedAt = 0
+
+function logBootPath(path: string) {
+  bootLogPending.push(path)
+  // Extraction touches thousands of files; repaint on a frame budget instead.
+  const now = performance.now()
+  if (now - bootLogFlushedAt < 60) return
+  bootLogFlushedAt = now
+  bootLog.value = [...bootLog.value, ...bootLogPending].slice(-BOOT_LOG_LINES)
+  bootLogPending = []
+}
+
 export function usePhp() {
   async function boot() {
     // 1. Boot PHP
-    setStatus('Loading PHP 8.4...', 0)
+    setStatus('Loading PHP 8.4 runtime', 0)
+    logBootPath('php-8.4.wasm')
     const loaderModule = await getPHPLoaderModule()
-    setStatus('Loading PHP 8.4...', 0.05)
+    setStatus('Loading PHP 8.4 runtime', 0.05)
     const runtimeId = await loadPHPRuntime(loaderModule)
     php.value = new PHP(runtimeId)
-    setStatus('Loading PHP 8.4...', 0.10)
+    setStatus('Loading PHP 8.4 runtime', 0.10)
 
     // 2. Load Laravel app into virtual filesystem
-    setStatus('Downloading Laravel app...', 0.10)
+    setStatus('Downloading project archive', 0.10)
+    logBootPath('app.zip')
     const res = await fetch('/app.zip')
     const zipData = await res.arrayBuffer()
     const zip = await JSZip.loadAsync(zipData)
-    setStatus('Downloading Laravel app...', 0.15)
+    setStatus('Downloading project archive', 0.15)
 
     const files = Object.entries(zip.files).filter(([, f]) => !f.dir)
     let loaded = 0
@@ -45,14 +63,16 @@ export function usePhp() {
 
       php.value!.writeFile(vfsPath, content)
       initialHashes.set(path, fnv1a(content))
+      logBootPath(path)
       loaded++
       if (loaded % 50 === 0 || loaded === files.length) {
-        setStatus(`Extracting files... (${loaded}/${files.length})`, 0.15 + (loaded / files.length) * 0.70)
+        setStatus(`Extracting project files — ${loaded}/${files.length}`, 0.15 + (loaded / files.length) * 0.70)
       }
     }
 
     // 3. Bootstrap full Laravel application
-    setStatus('Bootstrapping Laravel...', 0.88)
+    setStatus('Bootstrapping Laravel', 0.88)
+    logBootPath('bootstrap/app.php')
     await php.value!.run({
       code: `<?php
         chdir('/app');
@@ -66,6 +86,18 @@ export function usePhp() {
     // 4. Done
     setStatus('Ready', 1)
     booted.value = true
+  }
+
+  async function query<T = any>(code: string): Promise<T> {
+    if (!php.value) throw new Error('PHP runtime is not running')
+    const result = await php.value.run({ code })
+    const text = (result.text || '').trim()
+    if (!text) throw new Error(result.errors?.trim() || 'PHP returned no output')
+    try {
+      return JSON.parse(text) as T
+    } catch {
+      throw new Error(text)
+    }
   }
 
   function setStatus(text: string, progress?: number) {
@@ -382,6 +414,11 @@ export function usePhp() {
     }
   }
 
+  /** Signal that PHP mutated the filesystem behind our back (e.g. a SQL write). */
+  function touchVfs(): void {
+    vfsVersion.value++
+  }
+
   function collectVfsPaths(dir = '/app'): string[] {
     const paths: string[] = []
     try {
@@ -403,9 +440,11 @@ export function usePhp() {
     booted,
     bootProgress,
     bootStatus,
+    bootLog,
     vfsVersion,
     initialHashes,
     boot,
+    query,
     navigateTo,
     runArtisan,
     runComposerRequire,
@@ -417,6 +456,7 @@ export function usePhp() {
     fileExists,
     isDir,
     mkdir: mkdirP,
+    touchVfs,
     collectVfsPaths,
   }
 }

@@ -1,149 +1,159 @@
 <script setup lang="ts">
-import { ref, computed, nextTick } from 'vue'
+import { computed, nextTick, ref } from 'vue'
+import { Eraser } from 'lucide-vue-next'
 import { usePhp } from '../composables/usePhp'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 
 const { runArtisan, runComposerRequire } = usePhp()
 
-const inputValue = ref('')
+type Mode = 'artisan' | 'composer'
+type LineKind = 'command' | 'output' | 'error' | 'note'
+
+interface Line {
+  kind: LineKind
+  text: string
+}
+
+const MODES: { value: Mode; label: string; prefix: string; placeholder: string }[] = [
+  { value: 'artisan', label: 'Artisan', prefix: 'php artisan', placeholder: 'make:model Post -m' },
+  { value: 'composer', label: 'Composer', prefix: 'composer require', placeholder: 'spatie/laravel-sluggable' },
+]
+
+const mode = ref<Mode>('artisan')
+const input = ref('')
 const running = ref(false)
 const outputEl = ref<HTMLDivElement | null>(null)
-const commandType = ref<'artisan' | 'composer'>('artisan')
+const inputEl = ref<HTMLInputElement | null>(null)
+const lines = ref<Line[]>([])
 
-const commandHistory: string[] = []
+const history: string[] = []
 let historyIndex = -1
 
-interface OutputEntry {
-  html: string
-}
+const activeMode = computed(() => MODES.find(m => m.value === mode.value)!)
 
-const outputEntries = ref<OutputEntry[]>([
-  { html: '<div class="text-stone-400">Laravel Terminal — use the dropdown to switch between Artisan and Composer modes.</div>' },
-])
-
-const placeholder = computed(() =>
-  commandType.value === 'artisan' ? 'e.g. make:model Post' : 'e.g. spatie/laravel-sluggable'
-)
-
-function escapeHtml(str: string) {
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-}
-
-function appendOutput(html: string) {
-  outputEntries.value.push({ html })
+function append(kind: LineKind, text: string) {
+  if (!text) return
+  lines.value.push({ kind, text })
   nextTick(() => {
-    if (outputEl.value) {
-      outputEl.value.scrollTop = outputEl.value.scrollHeight
-    }
+    if (outputEl.value) outputEl.value.scrollTop = outputEl.value.scrollHeight
   })
 }
 
 async function run() {
-  if (running.value) return
-  const trimmed = inputValue.value.trim()
-  if (!trimmed) return
+  const command = input.value.trim()
+  if (running.value || !command) return
 
   running.value = true
-  commandHistory.push(trimmed)
-  historyIndex = commandHistory.length
+  history.push(command)
+  historyIndex = history.length
+  input.value = ''
+  append('command', `${activeMode.value.prefix} ${command}`)
 
-  if (commandType.value === 'artisan') {
-    appendOutput(`<div class="mt-3 text-stone-500">$ php artisan ${escapeHtml(trimmed)}</div>`)
+  try {
+    const { output, errors } = mode.value === 'artisan'
+      ? await runArtisan(command)
+      : await runComposerRequire(command)
 
-    try {
-      const { output, errors } = await runArtisan(trimmed)
-
-      if (output) {
-        appendOutput(`<pre class="text-stone-700 dark:text-stone-300 whitespace-pre-wrap">${escapeHtml(output)}</pre>`)
-      }
-      if (errors) {
-        appendOutput(`<pre class="text-red-600 whitespace-pre-wrap">${escapeHtml(errors)}</pre>`)
-      }
-      if (!output && !errors) {
-        appendOutput(`<div class="text-stone-400 italic">Command completed with no output.</div>`)
-      }
-    } catch (err: any) {
-      appendOutput(`<pre class="text-red-600 whitespace-pre-wrap">${escapeHtml(err.message)}</pre>`)
-      console.error(err)
-    }
-  } else {
-    appendOutput(`<div class="mt-3 text-stone-500">$ composer require ${escapeHtml(trimmed)}</div>`)
-    appendOutput(`<div class="text-stone-400 italic">Fetching package info...</div>`)
-
-    try {
-      const { output, errors } = await runComposerRequire(trimmed)
-
-      if (output) {
-        appendOutput(`<pre class="text-stone-700 dark:text-stone-300 whitespace-pre-wrap">${escapeHtml(output)}</pre>`)
-      }
-      if (errors) {
-        appendOutput(`<pre class="text-red-600 whitespace-pre-wrap">${escapeHtml(errors)}</pre>`)
-      }
-      if (!output && !errors) {
-        appendOutput(`<div class="text-stone-400 italic">Command completed with no output.</div>`)
-      }
-    } catch (err: any) {
-      appendOutput(`<pre class="text-red-600 whitespace-pre-wrap">${escapeHtml(err.message)}</pre>`)
-      console.error(err)
-    }
+    append('output', output.trimEnd())
+    append('error', errors.trimEnd())
+    if (!output && !errors) append('note', 'Command completed with no output.')
+  } catch (err: any) {
+    append('error', err.message)
+    console.error(err)
+  } finally {
+    running.value = false
+    nextTick(() => inputEl.value?.focus())
   }
-
-  running.value = false
-  inputValue.value = ''
 }
 
-function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'Enter') {
-    run()
-  } else if (e.key === 'ArrowUp') {
-    e.preventDefault()
-    if (historyIndex > 0) {
-      historyIndex--
-      inputValue.value = commandHistory[historyIndex]!
-    }
-  } else if (e.key === 'ArrowDown') {
-    e.preventDefault()
-    if (historyIndex < commandHistory.length - 1) {
-      historyIndex++
-      inputValue.value = commandHistory[historyIndex]!
+function onKeydown(event: KeyboardEvent) {
+  if (event.key === 'Enter') return run()
+
+  if (event.key === 'ArrowUp') {
+    event.preventDefault()
+    if (historyIndex > 0) input.value = history[--historyIndex]!
+    return
+  }
+
+  if (event.key === 'ArrowDown') {
+    event.preventDefault()
+    if (historyIndex < history.length - 1) {
+      input.value = history[++historyIndex]!
     } else {
-      historyIndex = commandHistory.length
-      inputValue.value = ''
+      historyIndex = history.length
+      input.value = ''
     }
   }
+}
+
+const KIND_CLASS: Record<LineKind, string> = {
+  command: 'text-foreground',
+  output: 'text-muted-foreground',
+  error: 'text-destructive',
+  note: 'text-muted-foreground/70 italic',
 }
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1 flex-col bg-zinc-950 text-xs text-zinc-300">
-    <div ref="outputEl" class="flex-1 overflow-y-auto p-4 font-mono leading-6">
-      <div v-for="(entry, i) in outputEntries" :key="i" v-html="entry.html"></div>
-    </div>
-    <div class="panel-terminal-input flex shrink-0 items-center gap-2 border-t border-zinc-800 bg-zinc-950 px-4 pb-8 pt-3 md:py-3">
-      <select
-        v-model="commandType"
-        class="shrink-0 rounded-md border border-zinc-700 bg-zinc-900 px-1.5 py-1 font-mono text-xs text-zinc-400 outline-none focus:border-zinc-500"
+  <div class="flex min-h-0 flex-1 flex-col bg-background">
+    <div class="flex h-9 shrink-0 items-center gap-2 border-b bg-panel px-2">
+      <div class="flex items-center gap-0.5 rounded-md bg-muted p-0.5">
+        <button
+          v-for="option in MODES"
+          :key="option.value"
+          type="button"
+          class="rounded px-2 py-1 text-xs font-medium transition-colors"
+          :class="mode === option.value
+            ? 'bg-background text-foreground shadow-xs'
+            : 'text-muted-foreground hover:text-foreground'"
+          @click="mode = option.value"
+        >{{ option.label }}</button>
+      </div>
+
+      <Button
+        variant="ghost"
+        size="sm"
+        class="ml-auto h-7"
+        :disabled="!lines.length"
+        @click="lines = []"
       >
-        <option value="artisan">php artisan</option>
-        <option value="composer">composer require</option>
-      </select>
-      <Input
-        v-model="inputValue"
+        <Eraser class="size-3.5" />
+        Clear
+      </Button>
+    </div>
+
+    <div ref="outputEl" class="min-h-0 flex-1 overflow-y-auto px-3 py-2.5 font-mono text-xs leading-6">
+      <p v-if="!lines.length" class="text-muted-foreground/70">
+        Run Artisan commands or pull a Composer package into the sandbox. ↑/↓ walks your history.
+      </p>
+
+      <template v-for="(line, i) in lines" :key="i">
+        <div v-if="line.kind === 'command'" class="mt-3 flex gap-1.5 first:mt-0">
+          <span class="shrink-0 select-none text-brand">$</span>
+          <span class="whitespace-pre-wrap break-all text-foreground">{{ line.text }}</span>
+        </div>
+        <pre v-else class="whitespace-pre-wrap break-words" :class="KIND_CLASS[line.kind]">{{ line.text }}</pre>
+      </template>
+    </div>
+
+    <div class="safe-bottom flex shrink-0 items-center gap-2 border-t bg-panel px-3 py-2">
+      <span class="shrink-0 select-none font-mono text-xs text-muted-foreground">{{ activeMode.prefix }}</span>
+      <input
+        ref="inputEl"
+        v-model="input"
         type="text"
         spellcheck="false"
         autocapitalize="off"
         autocorrect="off"
         :disabled="running"
-        :placeholder="placeholder"
-        class="h-8 flex-1 border-zinc-700 bg-zinc-900 font-mono text-xs text-zinc-200 placeholder:text-zinc-600 focus-visible:ring-zinc-500"
+        :placeholder="activeMode.placeholder"
+        :aria-label="`${activeMode.prefix} arguments`"
+        class="min-w-0 flex-1 bg-transparent font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground/60 disabled:opacity-50"
         @keydown="onKeydown"
       />
-      <Button
-        size="sm"
-        :disabled="running"
-        @click="run"
-      >Run</Button>
+      <Button size="sm" class="h-7 shrink-0" :disabled="running || !input.trim()" @click="run">
+        {{ running ? 'Running…' : 'Run' }}
+      </Button>
     </div>
   </div>
 </template>

@@ -1,79 +1,52 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { ChevronRight } from 'lucide-vue-next'
+import { useWorkspace } from '../composables/useWorkspace'
 
 const props = defineProps<{
   name: string
+  path: string
   isDir: boolean
   depth: number
 }>()
 
-const emit = defineEmits<{
-  select: []
-}>()
+const emit = defineEmits<{ select: [] }>()
+
+const { activeFilePath, collapseToken } = useWorkspace()
 
 const open = ref(false)
+const isActive = computed(() => !props.isDir && activeFilePath.value === props.path)
+
+watch(collapseToken, () => { open.value = false })
 
 function toggle() {
-  if (props.isDir) {
-    open.value = !open.value
-  } else {
-    emit('select')
-  }
+  if (props.isDir) open.value = !open.value
+  else emit('select')
 }
 </script>
 
 <template>
   <div>
-    <div
-      class="flex items-center gap-1.5 px-3 py-0.5 cursor-pointer hover:bg-stone-50 dark:hover:bg-stone-800 select-none"
-      :style="{ paddingLeft: `${12 + depth * 16}px` }"
-      @click.stop="toggle"
+    <button
+      type="button"
+      class="flex h-6 w-full items-center gap-1 rounded-sm pr-2 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      :class="isActive && 'bg-accent'"
+      :style="{ paddingLeft: `${6 + depth * 12}px` }"
+      @click="toggle"
     >
-      <!-- Chevron (dirs only) -->
-      <svg
+      <ChevronRight
         v-if="isDir"
-        class="w-3 h-3 shrink-0 transition-transform duration-150"
-        :class="{ 'rotate-90': open }"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      ><polyline points="9 18 15 12 9 6"/></svg>
-      <!-- Spacer for files -->
-      <span v-else class="w-3 shrink-0"></span>
-
-      <!-- Icon -->
-      <svg
-        v-if="isDir"
-        class="w-4 h-4 shrink-0 text-stone-500 dark:text-stone-400"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      ><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-      <svg
-        v-else
-        class="w-4 h-4 shrink-0 text-stone-400 dark:text-stone-500"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      ><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-
-      <!-- Label -->
+        class="size-3 shrink-0 text-muted-foreground transition-transform duration-150"
+        :class="open && 'rotate-90'"
+      />
+      <span v-else class="w-3 shrink-0" aria-hidden="true"></span>
       <span
         class="truncate"
-        :class="isDir ? 'text-stone-700 dark:text-stone-200' : 'text-stone-600 dark:text-stone-400'"
+        :class="isDir ? 'text-foreground' : isActive ? 'text-foreground' : 'text-muted-foreground'"
       >{{ name }}</span>
-    </div>
+      <span v-if="isActive" class="ml-auto size-1.5 shrink-0 rounded-full bg-brand" aria-hidden="true"></span>
+    </button>
 
-    <!-- Children slot (shown when open) -->
     <div v-if="isDir && open">
       <slot />
     </div>

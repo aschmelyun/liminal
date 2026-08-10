@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Liminal is a **browser-based Laravel IDE** that runs PHP 8.4 entirely in WebAssembly. It provides a code editor (CodeMirror 6), site preview, Artisan terminal, and an AI agent with tool-calling capabilities — all running client-side with no backend server.
+Liminal is a **browser-based Laravel IDE** that runs PHP 8.4 entirely in WebAssembly. It provides a code editor (CodeMirror 6), site preview, Artisan terminal, SQLite browser, and an AI agent with tool-calling capabilities — all running client-side with no backend server.
 
 ## Build Commands
 
@@ -28,16 +28,22 @@ PHP 8.4 runs in-browser via `@php-wasm/web-8-4`. On boot, the app downloads `app
 
 ### Key Composables
 
-- **`usePhp.ts`** — Singleton managing the PHP WASM runtime. Handles boot sequence (5 phases), VFS operations (read/write/list files at `/app/` prefix), PHP code execution, Laravel HTTP routing (`navigateTo`), and Artisan commands (`runArtisan`). This is the central abstraction that all views depend on.
+- **`usePhp.ts`** — Singleton managing the PHP WASM runtime. Handles the boot sequence, VFS operations (read/write/list files at `/app/` prefix), PHP code execution, Laravel HTTP routing (`navigateTo`), and Artisan commands (`runArtisan`). `query()` runs a PHP snippet and parses its stdout as JSON — the standard way to pull structured data out of the runtime. `bootLog` is the rolling tail of files written during boot, streamed by the loading screen.
+- **`useWorkspace.ts`** — Cross-panel state: the active file path (sidebar highlight + status bar) and the file-tree collapse token.
+- **`useDatabase.ts`** — SQLite access over PDO: table list with row counts, and `runSql()`. SQL is base64-encoded into the PHP snippet so nothing needs escaping.
+- **`useAgentSettings.ts`** — OpenAI API key and model, persisted to localStorage and shared by AgentView and the settings dialog.
 - **`useGlyphs.ts`** — Matrix-rain animation for the loading screen.
 
-### Tab-Based Views (App.vue)
+### Shell Layout (App.vue)
 
-Four views toggled with `v-show` (kept alive, not destroyed):
-- **CodeView** — CodeMirror 6 editor with file tree sidebar. Language detection by extension (PHP, Blade, HTML, JS, JSON, CSS, TS). File saves via Cmd/Ctrl+S.
-- **SiteView** — Renders Laravel routes in a sandboxed iframe by executing HTTP requests through the PHP kernel.
-- **TerminalView** — Interactive Artisan command runner with command history (up/down arrows).
-- **AgentView** — OpenAI chat integration with SSE streaming and 4 tool functions: `read_file`, `write_file`, `list_files`, `run_artisan`. API key/model stored in localStorage.
+`AppHeader` (brand + tab strip + theme/GitHub/settings) → three-column grid (`WorkspaceSidebar` / active view / `SandboxPanel`) → `StatusBar`. The right panel is collapsible from the status bar and its state persists in localStorage. `SettingsDialog` is a modal, not a view.
+
+Each view owns a single `h-9` contextual toolbar as its first child — that's the only per-view chrome. Views are toggled with `v-show` (kept alive, not destroyed):
+- **SiteView** — Renders Laravel routes in a sandboxed iframe by executing HTTP requests through the PHP kernel. Tailwind is injected into the response; "open in new tab" pops the rendered HTML as a blob URL.
+- **CodeView** — CodeMirror 6 editor. Language detection by extension (PHP, Blade, HTML, JS, JSON, CSS, TS). Saves via Cmd/Ctrl+S. A `chromeTheme` layered over `oneDark` binds the editor background, gutters, selection and caret to the design tokens.
+- **TerminalView** — Artisan and Composer command runner with history (up/down arrows). Output is typed line objects, not HTML strings.
+- **DatabaseView** — SQLite browser: table list, row viewer (capped at 500 rows), and a raw SQL bar.
+- **AgentView** — OpenAI chat integration with SSE streaming and 4 tool functions: `read_file`, `write_file`, `list_files`, `run_artisan`.
 
 ### WASM Chunk Reassembly
 
@@ -53,5 +59,7 @@ The Vite dev server and `public/_headers` configure `Cross-Origin-Opener-Policy:
 - TypeScript strict mode; unused locals/params warnings disabled
 - `shallowRef` for large objects (PHP instance), `ref` for normal state
 - Components: PascalCase files. Composables: `use` prefix, camelCase files.
-- Tailwind CSS v4 with stone/rose color palette
 - No centralized state store — composables provide shared reactive state
+- Tailwind CSS v4 driven entirely by the tokens in `src/style.css`. Never hardcode `stone-*` / `rose-*` in components — use `background` (content), `panel` (chrome), `muted`, `border`, `foreground`, `muted-foreground`, plus `destructive` / `success` for output state.
+- `brand` (rose) is reserved for identity and signal: logo mark, progress, focus rings, unsaved/active markers. Primary buttons stay neutral.
+- shadcn-style primitives live in `src/components/ui/`; prefer them over bespoke markup.
