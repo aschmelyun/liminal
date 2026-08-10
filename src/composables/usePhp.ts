@@ -326,33 +326,51 @@ export function usePhp() {
       }
 
       const version = stable.version
-      const distUrl = stable.dist?.url
-      if (!distUrl) {
-        return { output: '', errors: `No dist URL found for ${packageName}@${version}.` }
+
+      /*
+       * Packagist's dist URL is a GitHub zipball, but that redirects to
+       * codeload.github.com, which sends no CORS headers — unreachable from a
+       * page. So we rebuild the package from the two GitHub endpoints that do
+       * allow cross-origin reads: the trees API for the file list, and
+       * raw.githubusercontent.com for the blobs.
+       */
+      const repoSource: string = stable.source?.url || stable.dist?.url || ''
+      const repoMatch = repoSource.match(/github\.com\/([^/]+)\/([^/.]+)/)
+        || repoSource.match(/api\.github\.com\/repos\/([^/]+)\/([^/]+)/)
+      const ref: string = stable.dist?.reference || stable.source?.reference || version
+
+      if (!repoMatch) {
+        return {
+          output: '',
+          errors: `${packageName} is not hosted on GitHub. Only GitHub-hosted packages can be installed in the browser.`,
+        }
+      }
+      const [, repoOwner, repoName] = repoMatch as unknown as [string, string, string]
+
+      // 2. List the package's files at the exact commit Packagist pinned
+      const treeRes = await fetch(
+        `https://api.github.com/repos/${repoOwner}/${repoName}/git/trees/${ref}?recursive=1`,
+      )
+      if (!treeRes.ok) {
+        return {
+          output: '',
+          errors: treeRes.status === 403
+            ? 'GitHub API rate limit reached (60 requests/hour per IP). Try again later.'
+            : `Failed to list package files (HTTP ${treeRes.status}).`,
+        }
+      }
+      const treeData = await treeRes.json()
+      if (treeData.truncated) {
+        return { output: '', errors: `${packageName} is too large to install in the browser.` }
       }
 
-      // 2. Download the zip via CORS proxy
-      const zipRes = await fetch(`https://cors-anywhere.com/${distUrl}`, {
-        headers: { 'X-Requested-With': 'XMLHttpRequest' },
-        redirect: 'follow',
-      })
-      if (!zipRes.ok) {
-        return { output: '', errors: `Failed to download package zip (HTTP ${zipRes.status}).` }
-      }
-      const zipData = await zipRes.arrayBuffer()
-
-      // 3. Extract zip into vendor directory
-      const zip = await JSZip.loadAsync(zipData)
-      const zipFiles = Object.entries(zip.files).filter(([, f]) => !f.dir)
-
-      // Find the common prefix (most zips have a single root folder)
-      const allPaths = zipFiles.map(([p]) => p)
-      const firstPath = allPaths[0]
-      const prefix = firstPath ? firstPath.split('/')[0] + '/' : ''
-      const hasCommonPrefix = prefix && allPaths.every(p => p.startsWith(prefix))
+      // Mirrors what a Composer dist archive omits — none of it is autoloaded.
+      const SKIPPED = /^(\.github\/|tests\/|docs\/)/
+      const blobs = (treeData.tree as any[]).filter(
+        entry => entry.type === 'blob' && !SKIPPED.test(entry.path),
+      )
 
       const vendorBase = `/app/vendor/${vendor}/${name}`
-      // Ensure vendor directories exist
       const ensureDir = (dirPath: string) => {
         const segs = dirPath.split('/').filter(Boolean)
         let cur = ''
@@ -365,19 +383,33 @@ export function usePhp() {
       }
       ensureDir(vendorBase)
 
+      // 3. Download blobs in batches, writing serially so mkdir never races
+      const CONCURRENCY = 6
       let fileCount = 0
-      for (const [path, file] of zipFiles) {
-        const relativePath = hasCommonPrefix ? path.slice(prefix.length) : path
-        if (!relativePath) continue
-        const vfsPath = `${vendorBase}/${relativePath}`
+      const failed: string[] = []
 
-        // Ensure parent directories exist
-        const parentDir = vfsPath.split('/').slice(0, -1).join('/')
-        ensureDir(parentDir)
+      for (let i = 0; i < blobs.length; i += CONCURRENCY) {
+        const downloaded = await Promise.all(blobs.slice(i, i + CONCURRENCY).map(async (blob) => {
+          const rawUrl = `https://raw.githubusercontent.com/${repoOwner}/${repoName}/${ref}/${blob.path}`
+          const res = await fetch(rawUrl)
+          if (!res.ok) {
+            failed.push(blob.path)
+            return null
+          }
+          return { path: blob.path as string, content: new Uint8Array(await res.arrayBuffer()) }
+        }))
 
-        const content = await file.async('uint8array')
-        php.value!.writeFile(vfsPath, content)
-        fileCount++
+        for (const file of downloaded) {
+          if (!file) continue
+          const vfsPath = `${vendorBase}/${file.path}`
+          ensureDir(vfsPath.split('/').slice(0, -1).join('/'))
+          php.value!.writeFile(vfsPath, file.content)
+          fileCount++
+        }
+      }
+
+      if (!fileCount) {
+        return { output: '', errors: `Downloaded no files for ${packageName}@${version}.` }
       }
 
       // 4. Update composer.json
@@ -396,7 +428,10 @@ export function usePhp() {
       vfsVersion.value++
 
       let output = `Package ${packageName}@${version} installed successfully.\n`
-      output += `Extracted ${fileCount} files to vendor/${vendor}/${name}/\n`
+      output += `Wrote ${fileCount} files to vendor/${vendor}/${name}/\n`
+      if (failed.length) {
+        output += `Skipped ${failed.length} file(s) that failed to download: ${failed.slice(0, 5).join(', ')}\n`
+      }
       output += `Updated composer.json\n`
       if (registered.length) {
         output += `Registered autoload:\n`
