@@ -3,6 +3,7 @@ import { PHP, loadPHPRuntime } from '@php-wasm/universal'
 import { getPHPLoaderModule } from '@php-wasm/web-8-4'
 import JSZip from 'jszip'
 import { fnv1a } from '../utils/hash'
+import { toTerminalResult } from '../utils/terminal'
 import {
   restoreComposerPackages,
   runComposerRequire as composerRequire,
@@ -54,6 +55,19 @@ export const PREAMBLE = `
   if (file_exists('/app/.liminal/autoload.php')) require '/app/.liminal/autoload.php';
 `
 
+/*
+ * php-wasm does not run the CLI SAPI, so Laravel's runningInConsole() check
+ * falls through to false and every Artisan failure gets rendered as an HTML
+ * debug page. Application::runningInConsole() consults this env var first.
+ *
+ * Set through the superglobals rather than putenv() so it stays request-scoped
+ * and cannot leak into navigateTo(), which must keep rendering as HTTP.
+ */
+export const CONSOLE_ENV = `
+  $_ENV['APP_RUNNING_IN_CONSOLE'] = 'true';
+  $_SERVER['APP_RUNNING_IN_CONSOLE'] = 'true';
+`
+
 function ensureDirectory(runtime: PHP, path: string): void {
   const segments = path.split('/').filter(Boolean)
   let current = ''
@@ -68,6 +82,7 @@ export function usePhp() {
     return {
       php: php.value!,
       preamble: PREAMBLE,
+      consoleEnv: CONSOLE_ENV,
       changed: () => { vfsVersion.value++ },
     }
   }
@@ -194,16 +209,22 @@ export function usePhp() {
     const safeCmd = command.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
     const result = await php.value.run({
       code: `<?php
+        ${CONSOLE_ENV}
         ${PREAMBLE}
-        $app = require_once '/app/bootstrap/app.php';
-        $kernel = $app->make(Illuminate\\Contracts\\Console\\Kernel::class);
-        $kernel->bootstrap();
-        $status = Illuminate\\Support\\Facades\\Artisan::call('${safeCmd}');
-        echo Illuminate\\Support\\Facades\\Artisan::output();
+        try {
+          $app = require_once '/app/bootstrap/app.php';
+          $kernel = $app->make(Illuminate\\Contracts\\Console\\Kernel::class);
+          $kernel->bootstrap();
+          $status = Illuminate\\Support\\Facades\\Artisan::call('${safeCmd}');
+          echo Illuminate\\Support\\Facades\\Artisan::output();
+        } catch (\\Throwable $e) {
+          echo get_class($e) . ': ' . $e->getMessage() . "\\n";
+          echo '  at ' . $e->getFile() . ':' . $e->getLine() . "\\n";
+        }
       `,
     })
     vfsVersion.value++
-    return { output: result.text || '', errors: result.errors || '' }
+    return toTerminalResult(result.text, result.errors)
   }
 
   function readFile(vfsPath: string): string {

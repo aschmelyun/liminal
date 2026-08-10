@@ -1,5 +1,6 @@
 import type { PHP } from '@php-wasm/universal'
 import JSZip from 'jszip'
+import { toTerminalResult } from '../utils/terminal'
 
 export interface ComposerLockEntry {
   version: string
@@ -14,6 +15,7 @@ export type ComposerProgress = (line: string) => void
 interface ComposerRuntime {
   php: PHP
   preamble: string
+  consoleEnv: string
   changed(): void
 }
 
@@ -417,15 +419,23 @@ async function discoverPackages(runtime: ComposerRuntime): Promise<{ output: str
       foreach (glob('/app/bootstrap/cache/*.php') ?: [] as $cacheFile) {
         @unlink($cacheFile);
       }
+      ${runtime.consoleEnv}
       ${runtime.preamble}
-      $app = require '/app/bootstrap/app.php';
-      $kernel = $app->make(Illuminate\\Contracts\\Console\\Kernel::class);
-      $kernel->bootstrap();
-      Illuminate\\Support\\Facades\\Artisan::call('package:discover', ['--ansi' => false]);
-      echo Illuminate\\Support\\Facades\\Artisan::output();
+      try {
+        $app = require '/app/bootstrap/app.php';
+        $kernel = $app->make(Illuminate\\Contracts\\Console\\Kernel::class);
+        $kernel->bootstrap();
+        // ArrayInput reports an option as present by key alone, so '--ansi' =>
+        // false would switch decoration *on*. '--no-ansi' is the off switch.
+        Illuminate\\Support\\Facades\\Artisan::call('package:discover', ['--no-ansi' => true]);
+        echo Illuminate\\Support\\Facades\\Artisan::output();
+      } catch (\\Throwable $e) {
+        echo get_class($e) . ': ' . $e->getMessage() . "\\n";
+        echo '  at ' . $e->getFile() . ':' . $e->getLine() . "\\n";
+      }
     `,
   })
-  return { output: result.text || '', errors: result.errors || '' }
+  return toTerminalResult(result.text, result.errors)
 }
 
 async function readLock(): Promise<ComposerLock> {
