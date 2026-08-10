@@ -12,7 +12,7 @@ const vfsVersion = ref(0)
 const initialHashes = new Map<string, number>()
 
 // Rolling tail of paths written during boot, surfaced by the loading screen.
-const BOOT_LOG_LINES = 24
+const BOOT_LOG_LINES = 11
 const bootLog = ref<string[]>([])
 let bootLogPending: string[] = []
 let bootLogFlushedAt = 0

@@ -15,6 +15,9 @@ const pointerEvents = ref<'auto' | 'none'>('auto')
 
 const pct = computed(() => Math.round(props.progress * 100))
 
+// Newest first: the stream reads top-down, older paths sink and fade out.
+const stream = computed(() => [...props.log].reverse())
+
 onMounted(start)
 
 watch(() => props.progress, (val) => {
@@ -69,13 +72,13 @@ watch(() => props.failed, (failed) => {
         </div>
       </div>
 
-      <!-- Files streaming into the virtual filesystem, newest at the bottom. -->
+      <!-- Files streaming into the virtual filesystem, newest at the top. -->
       <div
         class="relative h-[240px] overflow-hidden px-6 pb-5 pt-3"
         aria-hidden="true"
       >
-        <div class="boot-log flex h-full flex-col justify-end gap-px font-mono text-[10px] leading-[15px] text-muted-foreground">
-          <div v-for="(line, i) in log" :key="`${i}-${line}`" class="truncate">{{ line }}</div>
+        <div class="boot-log flex h-full flex-col font-mono text-[11px] leading-[21px] text-muted-foreground">
+          <div v-for="(line, i) in stream" :key="i" class="truncate">{{ line }}</div>
         </div>
       </div>
     </div>
@@ -84,7 +87,7 @@ watch(() => props.failed, (failed) => {
 
 <style scoped>
 .boot-log {
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 65%);
-  mask-image: linear-gradient(to bottom, transparent 0%, black 65%);
+  -webkit-mask-image: linear-gradient(to bottom, black 0%, black 25%, transparent 100%);
+  mask-image: linear-gradient(to bottom, black 0%, black 25%, transparent 100%);
 }
 </style>
