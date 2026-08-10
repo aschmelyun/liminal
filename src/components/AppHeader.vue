@@ -32,7 +32,6 @@ const TABS = [
         style="font-family: 'Jacquard 24', serif;"
         aria-hidden="true"
       >L</div>
-      <span class="hidden text-sm font-semibold tracking-tight sm:inline">liminal</span>
     </div>
 
     <Tabs
