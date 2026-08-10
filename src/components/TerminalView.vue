@@ -14,54 +14,101 @@ interface Line {
   text: string
 }
 
-const MODES: { value: Mode; label: string; prefix: string; placeholder: string }[] = [
-  { value: 'artisan', label: 'Artisan', prefix: 'php artisan', placeholder: 'make:model Post -m' },
-  { value: 'composer', label: 'Composer', prefix: 'composer require', placeholder: 'spatie/laravel-sluggable' },
+const MODES: { value: Mode; label: string; prefix: string; placeholder: string; hint: string }[] = [
+  {
+    value: 'artisan',
+    label: 'Artisan',
+    prefix: 'php artisan',
+    placeholder: 'make:model Post -m',
+    hint: 'Run Artisan commands against the sandbox. ↑/↓ walks your history.',
+  },
+  {
+    value: 'composer',
+    label: 'Composer',
+    prefix: 'composer require',
+    placeholder: 'spatie/laravel-sluggable',
+    hint: 'Pull a Composer package into the sandbox. ↑/↓ walks your history.',
+  },
 ]
 
+/** Each mode keeps its own transcript, draft command, history and scroll spot. */
+interface Buffer {
+  lines: Line[]
+  input: string
+  history: string[]
+  historyIndex: number
+  scrollTop: number
+}
+
+function createBuffer(): Buffer {
+  return { lines: [], input: '', history: [], historyIndex: 0, scrollTop: 0 }
+}
+
 const mode = ref<Mode>('artisan')
-const input = ref('')
 const running = ref(false)
+// Which transcript the in-flight command belongs to — it may not be on screen.
+const runningMode = ref<Mode | null>(null)
 const outputEl = ref<HTMLDivElement | null>(null)
 const inputEl = ref<HTMLInputElement | null>(null)
-const lines = ref<Line[]>([])
+const buffers = ref<Record<Mode, Buffer>>({ artisan: createBuffer(), composer: createBuffer() })
 
-const history: string[] = []
-let historyIndex = -1
+const buffer = computed(() => buffers.value[mode.value])
+const activeMode = computed(() => modeConfig(mode.value))
 
-const activeMode = computed(() => MODES.find(m => m.value === mode.value)!)
+function modeConfig(value: Mode) {
+  return MODES.find(option => option.value === value)!
+}
 
-function append(kind: LineKind, text: string) {
-  if (!text) return
-  lines.value.push({ kind, text })
+function scrollToBottom() {
   nextTick(() => {
     if (outputEl.value) outputEl.value.scrollTop = outputEl.value.scrollHeight
   })
 }
 
+function switchMode(next: Mode) {
+  if (next === mode.value) return
+  buffer.value.scrollTop = outputEl.value?.scrollTop ?? 0
+  mode.value = next
+  nextTick(() => {
+    if (outputEl.value) outputEl.value.scrollTop = buffer.value.scrollTop
+    inputEl.value?.focus()
+  })
+}
+
+function append(target: Mode, kind: LineKind, text: string) {
+  if (!text) return
+  buffers.value[target].lines.push({ kind, text })
+  // A background command must not yank the transcript you are reading.
+  if (target === mode.value) scrollToBottom()
+}
+
 async function run() {
-  const command = input.value.trim()
+  const target = mode.value
+  const active = buffers.value[target]
+  const command = active.input.trim()
   if (running.value || !command) return
 
   running.value = true
-  history.push(command)
-  historyIndex = history.length
-  input.value = ''
-  append('command', `${activeMode.value.prefix} ${command}`)
+  runningMode.value = target
+  active.history.push(command)
+  active.historyIndex = active.history.length
+  active.input = ''
+  append(target, 'command', `${modeConfig(target).prefix} ${command}`)
 
   try {
-    const { output, errors } = mode.value === 'artisan'
+    const { output, errors } = target === 'artisan'
       ? await runArtisan(command)
-      : await runComposerRequire(command, line => append('output', line))
+      : await runComposerRequire(command, line => append(target, 'output', line))
 
-    append('output', output.trimEnd())
-    append('error', errors.trimEnd())
-    if (!output && !errors) append('note', 'Command completed with no output.')
+    append(target, 'output', output.trimEnd())
+    append(target, 'error', errors.trimEnd())
+    if (!output && !errors) append(target, 'note', 'Command completed with no output.')
   } catch (err: any) {
-    append('error', err.message)
+    append(target, 'error', err.message)
     console.error(err)
   } finally {
     running.value = false
+    runningMode.value = null
     nextTick(() => inputEl.value?.focus())
   }
 }
@@ -69,19 +116,21 @@ async function run() {
 function onKeydown(event: KeyboardEvent) {
   if (event.key === 'Enter') return run()
 
+  const active = buffer.value
+
   if (event.key === 'ArrowUp') {
     event.preventDefault()
-    if (historyIndex > 0) input.value = history[--historyIndex]!
+    if (active.historyIndex > 0) active.input = active.history[--active.historyIndex]!
     return
   }
 
   if (event.key === 'ArrowDown') {
     event.preventDefault()
-    if (historyIndex < history.length - 1) {
-      input.value = history[++historyIndex]!
+    if (active.historyIndex < active.history.length - 1) {
+      active.input = active.history[++active.historyIndex]!
     } else {
-      historyIndex = history.length
-      input.value = ''
+      active.historyIndex = active.history.length
+      active.input = ''
     }
   }
 }
@@ -102,20 +151,27 @@ const KIND_CLASS: Record<LineKind, string> = {
           v-for="option in MODES"
           :key="option.value"
           type="button"
-          class="rounded px-2 py-1 text-xs font-medium transition-colors"
+          class="flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium transition-colors"
           :class="mode === option.value
             ? 'bg-background text-foreground shadow-xs'
             : 'text-muted-foreground hover:text-foreground'"
-          @click="mode = option.value"
-        >{{ option.label }}</button>
+          @click="switchMode(option.value)"
+        >
+          {{ option.label }}
+          <span
+            v-if="runningMode === option.value"
+            class="size-1.5 animate-pulse rounded-full bg-brand"
+            :aria-label="`${option.label} command running`"
+          ></span>
+        </button>
       </div>
 
       <Button
         variant="ghost"
         size="sm"
         class="ml-auto h-7"
-        :disabled="!lines.length"
-        @click="lines = []"
+        :disabled="!buffer.lines.length"
+        @click="buffer.lines = []"
       >
         <Eraser class="size-3.5" />
         Clear
@@ -123,11 +179,11 @@ const KIND_CLASS: Record<LineKind, string> = {
     </div>
 
     <div ref="outputEl" class="min-h-0 flex-1 overflow-y-auto px-3 py-2.5 font-mono text-xs leading-6">
-      <p v-if="!lines.length" class="text-muted-foreground/70">
-        Run Artisan commands or pull a Composer package into the sandbox. ↑/↓ walks your history.
+      <p v-if="!buffer.lines.length" class="text-muted-foreground/70">
+        {{ activeMode.hint }}
       </p>
 
-      <template v-for="(line, i) in lines" :key="i">
+      <template v-for="(line, i) in buffer.lines" :key="i">
         <div v-if="line.kind === 'command'" class="mt-3 flex gap-1.5 first:mt-0">
           <span class="shrink-0 select-none text-brand">$</span>
           <span class="whitespace-pre-wrap break-all text-foreground">{{ line.text }}</span>
@@ -140,7 +196,7 @@ const KIND_CLASS: Record<LineKind, string> = {
       <span class="shrink-0 select-none font-mono text-xs text-muted-foreground">{{ activeMode.prefix }}</span>
       <input
         ref="inputEl"
-        v-model="input"
+        v-model="buffer.input"
         type="text"
         spellcheck="false"
         autocapitalize="off"
@@ -151,7 +207,7 @@ const KIND_CLASS: Record<LineKind, string> = {
         class="min-w-0 flex-1 bg-transparent font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground/60 disabled:opacity-50"
         @keydown="onKeydown"
       />
-      <Button size="sm" class="h-7 shrink-0" :disabled="running || !input.trim()" @click="run">
+      <Button size="sm" class="h-7 shrink-0" :disabled="running || !buffer.input.trim()" @click="run">
         {{ running ? 'Running…' : 'Run' }}
       </Button>
     </div>
