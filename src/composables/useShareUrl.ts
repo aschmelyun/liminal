@@ -7,7 +7,7 @@ interface SharePayload {
   d: string[]
 }
 
-const SKIP_DIRS = ['vendor', 'node_modules', '.git']
+const SKIP_DIRS = ['vendor', 'node_modules', '.git', '.liminal']
 
 const sharing = ref(false)
 const shareStatus = ref('')

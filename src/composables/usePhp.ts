@@ -3,6 +3,12 @@ import { PHP, loadPHPRuntime } from '@php-wasm/universal'
 import { getPHPLoaderModule } from '@php-wasm/web-8-4'
 import JSZip from 'jszip'
 import { fnv1a } from '../utils/hash'
+import {
+  restoreComposerPackages,
+  runComposerRequire as composerRequire,
+  clearComposerPackageCache,
+  type ComposerProgress,
+} from './useComposer'
 
 const php = shallowRef<PHP | null>(null)
 const booted = ref(false)
@@ -27,7 +33,45 @@ function logBootPath(path: string) {
   bootLogPending = []
 }
 
+// Git-ignored Laravel runtime directories are empty, so app.zip carries no
+// entries for them. Recreate them in MEMFS before Composer or Laravel boots.
+const LARAVEL_RUNTIME_DIRS = [
+  '/app/bootstrap/cache',
+  '/app/storage/app/private',
+  '/app/storage/app/public',
+  '/app/storage/framework/cache/data',
+  '/app/storage/framework/sessions',
+  '/app/storage/framework/testing',
+  '/app/storage/framework/views',
+  '/app/storage/logs',
+]
+
+// Every entry point requires Composer's autoloader plus the supplemental one
+// generated for dynamically installed packages.
+export const PREAMBLE = `
+  chdir('/app');
+  require '/app/vendor/autoload.php';
+  if (file_exists('/app/.liminal/autoload.php')) require '/app/.liminal/autoload.php';
+`
+
+function ensureDirectory(runtime: PHP, path: string): void {
+  const segments = path.split('/').filter(Boolean)
+  let current = ''
+  for (const segment of segments) {
+    current += `/${segment}`
+    if (!runtime.fileExists(current)) runtime.mkdir(current)
+  }
+}
+
 export function usePhp() {
+  function composerRuntime() {
+    return {
+      php: php.value!,
+      preamble: PREAMBLE,
+      changed: () => { vfsVersion.value++ },
+    }
+  }
+
   async function boot() {
     // 1. Boot PHP
     setStatus('Loading PHP 8.4 runtime', 0)
@@ -70,20 +114,42 @@ export function usePhp() {
       }
     }
 
-    // 3. Bootstrap full Laravel application
-    setStatus('Bootstrapping Laravel', 0.88)
+    for (const directory of LARAVEL_RUNTIME_DIRS) {
+      ensureDirectory(php.value!, directory)
+    }
+
+    const composerRuntimeFiles = [
+      '/app/.liminal/resolve.php',
+      '/app/.liminal/classmap.php',
+      '/app/.liminal/generate.php',
+      '/app/vendor/composer/semver/src/Semver.php',
+    ]
+    for (const requiredFile of composerRuntimeFiles) {
+      if (!php.value!.fileExists(requiredFile)) {
+        throw new Error(`Embedded Composer runtime file is missing: ${requiredFile}`)
+      }
+    }
+
+    // 3. Restore dynamically installed Composer packages from IndexedDB
+    setStatus('Restoring Composer packages', 0.86)
+    await restoreComposerPackages(composerRuntime(), (line) => {
+      setStatus(line, 0.90)
+      logBootPath(line)
+    })
+
+    // 4. Bootstrap full Laravel application
+    setStatus('Bootstrapping Laravel', 0.95)
     logBootPath('bootstrap/app.php')
     await php.value!.run({
       code: `<?php
-        chdir('/app');
-        require '/app/vendor/autoload.php';
+        ${PREAMBLE}
         $app = require_once '/app/bootstrap/app.php';
         $kernel = $app->make(Illuminate\\Contracts\\Console\\Kernel::class);
         $kernel->bootstrap();
       `,
     })
 
-    // 4. Done
+    // 5. Done
     setStatus('Ready', 1)
     booted.value = true
   }
@@ -112,8 +178,7 @@ export function usePhp() {
     const safePath = path.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
     const result = await php.value.run({
       code: `<?php
-        chdir('/app');
-        require '/app/vendor/autoload.php';
+        ${PREAMBLE}
         $app = require_once '/app/bootstrap/app.php';
         $request = Illuminate\\Http\\Request::create('${safePath}', 'GET');
         $kernel = $app->make(Illuminate\\Contracts\\Http\\Kernel::class);
@@ -129,8 +194,7 @@ export function usePhp() {
     const safeCmd = command.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
     const result = await php.value.run({
       code: `<?php
-        chdir('/app');
-        require '/app/vendor/autoload.php';
+        ${PREAMBLE}
         $app = require_once '/app/bootstrap/app.php';
         $kernel = $app->make(Illuminate\\Contracts\\Console\\Kernel::class);
         $kernel->bootstrap();
@@ -175,278 +239,15 @@ export function usePhp() {
 
   function mkdirP(path: string): void {
     if (!php.value) return
-    php.value.mkdir(path)
+    ensureDirectory(php.value, path)
   }
 
-  async function dumpAutoload(): Promise<{ output: string; errors: string }> {
-    if (!php.value) return { output: '', errors: '' }
-    // Re-generate the Composer autoloader at runtime so newly-installed
-    // packages are picked up by class_exists / use statements.
-    const result = await php.value.run({
-      code: `<?php
-        chdir('/app');
-        // Rebuild the Composer autoloader from scratch
-        require '/app/vendor/composer/autoload_real.php';
-
-        // Re-register the autoloader with the updated files
-        require '/app/vendor/autoload.php';
-
-        // Bootstrap Laravel so package:discover can run
-        $app = require_once '/app/bootstrap/app.php';
-        $kernel = $app->make(Illuminate\\Contracts\\Console\\Kernel::class);
-        $kernel->bootstrap();
-        $status = Illuminate\\Support\\Facades\\Artisan::call('package:discover');
-        echo Illuminate\\Support\\Facades\\Artisan::output();
-      `,
-    })
-    vfsVersion.value++
-    return { output: result.text || '', errors: result.errors || '' }
-  }
-
-  function registerPackageAutoload(packageName: string, vendorBase: string): string[] {
-    if (!php.value) return []
-
-    const registered: string[] = []
-
-    // Read the package's own composer.json for autoload config
-    const pkgComposerPath = `${vendorBase}/composer.json`
-    if (!php.value.fileExists(pkgComposerPath)) return []
-
-    const pkgComposer = JSON.parse(php.value.readFileAsText(pkgComposerPath))
-    const psr4 = pkgComposer.autoload?.['psr-4'] ?? {}
-
-    // Read the current autoload_psr4.php
-    const psr4Path = '/app/vendor/composer/autoload_psr4.php'
-    let psr4Content = php.value.readFileAsText(psr4Path)
-
-    // Read the current autoload_classmap.php
-    const classmapPath = '/app/vendor/composer/autoload_classmap.php'
-    let classmapContent = php.value.readFileAsText(classmapPath)
-
-    // Read the current autoload_static.php
-    const staticPath = '/app/vendor/composer/autoload_static.php'
-    let staticContent = php.value.readFileAsText(staticPath)
-
-    for (const [namespace, path] of Object.entries(psr4)) {
-      const vendorRelative = vendorBase.replace('/app/', '')
-      const fullPath = `$vendorDir . '/${vendorRelative}/${path}'`
-      const escapedNs = (namespace as string).replace(/\\/g, '\\\\')
-
-      // Add to autoload_psr4.php if not already present
-      if (!psr4Content.includes(`'${escapedNs}'`)) {
-        psr4Content = psr4Content.replace(
-          /return array\(/,
-          `return array(\n    '${escapedNs}' => array(${fullPath}),`
-        )
-        registered.push(`PSR-4: ${namespace} → ${path}`)
-      }
-
-      // Add to autoload_static.php $prefixDirsPsr4
-      if (!staticContent.includes(`'${escapedNs}'`)) {
-        staticContent = staticContent.replace(
-          /public static \$prefixDirsPsr4 = array \(/,
-          `public static $prefixDirsPsr4 = array (\n        '${escapedNs}' => \n        array (\n            0 => __DIR__ . '/../..' . '/${vendorRelative}/${path}',\n        ),`
-        )
-
-        // Also add to $prefixLengthsPsr4
-        const firstChar = (namespace as string)[0]
-        const nsLength = (namespace as string).length
-        const prefixLengthEntry = `'${escapedNs}' => ${nsLength},`
-        if (!staticContent.includes(prefixLengthEntry)) {
-          // Find the section for this first character, or add a new one
-          const charSection = `'${firstChar}' =>`
-          if (staticContent.includes(charSection)) {
-            staticContent = staticContent.replace(
-              new RegExp(`('${firstChar}' =>\\s*array \\()`),
-              `$1\n            ${prefixLengthEntry}`
-            )
-          } else {
-            staticContent = staticContent.replace(
-              /public static \$prefixLengthsPsr4 = array \(/,
-              `public static $prefixLengthsPsr4 = array (\n        '${firstChar}' => \n        array (\n            ${prefixLengthEntry}\n        ),`
-            )
-          }
-        }
-      }
-    }
-
-    php.value.writeFile(psr4Path, psr4Content)
-    php.value.writeFile(staticPath, staticContent)
-    php.value.writeFile(classmapPath, classmapContent)
-
-    // Update installed.json to register the package
-    const installedPath = '/app/vendor/composer/installed.json'
-    try {
-      const installed = JSON.parse(php.value.readFileAsText(installedPath))
-      const packages = installed.packages ?? installed
-      const alreadyInstalled = packages.some((p: any) => p.name === packageName)
-      if (!alreadyInstalled) {
-        packages.push({
-          name: packageName,
-          version: pkgComposer.version || 'dev-main',
-          type: pkgComposer.type || 'library',
-          autoload: pkgComposer.autoload || {},
-          extra: pkgComposer.extra || {},
-        })
-        if (installed.packages) {
-          installed.packages = packages
-        }
-        php.value.writeFile(installedPath, JSON.stringify(installed, null, 4))
-      }
-    } catch { /* installed.json may not exist */ }
-
-    return registered
-  }
-
-  async function runComposerRequire(packageName: string): Promise<{ output: string; errors: string }> {
+  async function runComposerRequire(
+    packageName: string,
+    progress?: ComposerProgress,
+  ): Promise<{ output: string; errors: string }> {
     if (!php.value) return { output: '', errors: 'PHP runtime not loaded' }
-
-    const parts = packageName.split('/')
-    if (parts.length !== 2) {
-      return { output: '', errors: 'Invalid package name. Use vendor/package format.' }
-    }
-    const [vendor, name] = parts
-
-    try {
-      // 1. Fetch package metadata from Packagist
-      const metaRes = await fetch(`https://packagist.org/packages/${vendor}/${name}.json`)
-      if (!metaRes.ok) {
-        return { output: '', errors: `Package "${packageName}" not found on Packagist.` }
-      }
-      const meta = await metaRes.json()
-      const versionsObj = meta.package?.versions ?? {}
-
-      // Pick latest stable version (no dev/alpha/beta/RC)
-      const stable = Object.values(versionsObj).find((v: any) => {
-        const ver: string = v.version || ''
-        return !ver.includes('dev') && !ver.includes('alpha') && !ver.includes('beta') && !ver.includes('RC')
-      }) as any
-      if (!stable) {
-        return { output: '', errors: `No stable version found for "${packageName}".` }
-      }
-
-      const version = stable.version
-
-      /*
-       * Packagist's dist URL is a GitHub zipball, but that redirects to
-       * codeload.github.com, which sends no CORS headers — unreachable from a
-       * page. So we rebuild the package from the two GitHub endpoints that do
-       * allow cross-origin reads: the trees API for the file list, and
-       * raw.githubusercontent.com for the blobs.
-       */
-      const repoSource: string = stable.source?.url || stable.dist?.url || ''
-      const repoMatch = repoSource.match(/github\.com\/([^/]+)\/([^/.]+)/)
-        || repoSource.match(/api\.github\.com\/repos\/([^/]+)\/([^/]+)/)
-      const ref: string = stable.dist?.reference || stable.source?.reference || version
-
-      if (!repoMatch) {
-        return {
-          output: '',
-          errors: `${packageName} is not hosted on GitHub. Only GitHub-hosted packages can be installed in the browser.`,
-        }
-      }
-      const [, repoOwner, repoName] = repoMatch as unknown as [string, string, string]
-
-      // 2. List the package's files at the exact commit Packagist pinned
-      const treeRes = await fetch(
-        `https://api.github.com/repos/${repoOwner}/${repoName}/git/trees/${ref}?recursive=1`,
-      )
-      if (!treeRes.ok) {
-        return {
-          output: '',
-          errors: treeRes.status === 403
-            ? 'GitHub API rate limit reached (60 requests/hour per IP). Try again later.'
-            : `Failed to list package files (HTTP ${treeRes.status}).`,
-        }
-      }
-      const treeData = await treeRes.json()
-      if (treeData.truncated) {
-        return { output: '', errors: `${packageName} is too large to install in the browser.` }
-      }
-
-      // Mirrors what a Composer dist archive omits — none of it is autoloaded.
-      const SKIPPED = /^(\.github\/|tests\/|docs\/)/
-      const blobs = (treeData.tree as any[]).filter(
-        entry => entry.type === 'blob' && !SKIPPED.test(entry.path),
-      )
-
-      const vendorBase = `/app/vendor/${vendor}/${name}`
-      const ensureDir = (dirPath: string) => {
-        const segs = dirPath.split('/').filter(Boolean)
-        let cur = ''
-        for (const seg of segs) {
-          cur += '/' + seg
-          if (!php.value!.fileExists(cur)) {
-            php.value!.mkdir(cur)
-          }
-        }
-      }
-      ensureDir(vendorBase)
-
-      // 3. Download blobs in batches, writing serially so mkdir never races
-      const CONCURRENCY = 6
-      let fileCount = 0
-      const failed: string[] = []
-
-      for (let i = 0; i < blobs.length; i += CONCURRENCY) {
-        const downloaded = await Promise.all(blobs.slice(i, i + CONCURRENCY).map(async (blob) => {
-          const rawUrl = `https://raw.githubusercontent.com/${repoOwner}/${repoName}/${ref}/${blob.path}`
-          const res = await fetch(rawUrl)
-          if (!res.ok) {
-            failed.push(blob.path)
-            return null
-          }
-          return { path: blob.path as string, content: new Uint8Array(await res.arrayBuffer()) }
-        }))
-
-        for (const file of downloaded) {
-          if (!file) continue
-          const vfsPath = `${vendorBase}/${file.path}`
-          ensureDir(vfsPath.split('/').slice(0, -1).join('/'))
-          php.value!.writeFile(vfsPath, file.content)
-          fileCount++
-        }
-      }
-
-      if (!fileCount) {
-        return { output: '', errors: `Downloaded no files for ${packageName}@${version}.` }
-      }
-
-      // 4. Update composer.json
-      const composerJsonPath = '/app/composer.json'
-      const composerJson = JSON.parse(php.value.readFileAsText(composerJsonPath))
-      if (!composerJson.require) composerJson.require = {}
-      composerJson.require[packageName] = `^${version.replace(/^v/, '')}`
-      php.value.writeFile(composerJsonPath, JSON.stringify(composerJson, null, 4))
-
-      // 5. Register PSR-4 autoload entries from the package
-      const registered = registerPackageAutoload(packageName, vendorBase)
-
-      // 6. Dump autoload
-      const autoloadResult = await dumpAutoload()
-
-      vfsVersion.value++
-
-      let output = `Package ${packageName}@${version} installed successfully.\n`
-      output += `Wrote ${fileCount} files to vendor/${vendor}/${name}/\n`
-      if (failed.length) {
-        output += `Skipped ${failed.length} file(s) that failed to download: ${failed.slice(0, 5).join(', ')}\n`
-      }
-      output += `Updated composer.json\n`
-      if (registered.length) {
-        output += `Registered autoload:\n`
-        for (const r of registered) {
-          output += `  ${r}\n`
-        }
-      }
-      if (autoloadResult.output) {
-        output += autoloadResult.output
-      }
-
-      return { output, errors: autoloadResult.errors }
-    } catch (err: any) {
-      return { output: '', errors: err.message || 'Unknown error during composer require.' }
-    }
+    return composerRequire(composerRuntime(), packageName, progress)
   }
 
   /** Signal that PHP mutated the filesystem behind our back (e.g. a SQL write). */
@@ -483,7 +284,7 @@ export function usePhp() {
     navigateTo,
     runArtisan,
     runComposerRequire,
-    dumpAutoload,
+    clearComposerPackageCache,
     readFile,
     readFileAsBuffer,
     writeFile,

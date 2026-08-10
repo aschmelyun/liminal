@@ -52,7 +52,7 @@ async function run() {
   try {
     const { output, errors } = mode.value === 'artisan'
       ? await runArtisan(command)
-      : await runComposerRequire(command)
+      : await runComposerRequire(command, line => append('output', line))
 
     append('output', output.trimEnd())
     append('error', errors.trimEnd())

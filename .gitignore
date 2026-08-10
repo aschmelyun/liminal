@@ -12,6 +12,7 @@ dist
 dist-ssr
 *.local
 public/app.zip
+app/.liminal/
 
 # Editor directories and files
 .vscode/*
