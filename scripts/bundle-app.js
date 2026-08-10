@@ -5,14 +5,15 @@
  * to keep the ZIP small for browser delivery.
  */
 import { createWriteStream } from 'fs';
-import { readdir, stat, readFile } from 'fs/promises';
+import { copyFile, mkdir, readdir, stat } from 'fs/promises';
 import { join, relative } from 'path';
-import { pipeline } from 'stream/promises';
 import archiver from 'archiver';
 
 const ROOT = join(import.meta.dirname, '..');
 const APP_DIR = join(ROOT, 'app');
 const OUT_FILE = join(ROOT, 'public', 'app.zip');
+const LIMINAL_SOURCE_DIR = join(ROOT, 'src', 'php', 'composer');
+const LIMINAL_TARGET_DIR = join(APP_DIR, '.liminal');
 
 const EXCLUDE_DIRS = new Set([
     'node_modules',
@@ -47,6 +48,30 @@ async function collectFiles(dir, base) {
 
     return files;
 }
+
+async function stageLiminalRuntime() {
+    try {
+        await stat(join(APP_DIR, 'composer.json'));
+    } catch {
+        throw new Error('The embedded Laravel app is missing. Restore app/ before building.');
+    }
+
+    const entries = await readdir(LIMINAL_SOURCE_DIR, { withFileTypes: true });
+    const runtimeFiles = entries.filter((entry) => entry.isFile());
+
+    await mkdir(LIMINAL_TARGET_DIR, { recursive: true });
+    for (const entry of runtimeFiles) {
+        await copyFile(
+            join(LIMINAL_SOURCE_DIR, entry.name),
+            join(LIMINAL_TARGET_DIR, entry.name),
+        );
+    }
+
+    console.log(`  Staged ${runtimeFiles.length} files from src/php/composer/`);
+}
+
+console.log('Staging Liminal Composer runtime...');
+await stageLiminalRuntime();
 
 console.log('Collecting files from app/...');
 const files = await collectFiles(APP_DIR, APP_DIR);

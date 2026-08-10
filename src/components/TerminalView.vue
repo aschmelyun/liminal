@@ -21,7 +21,7 @@ const outputEntries = ref<OutputEntry[]>([
 ])
 
 const placeholder = computed(() =>
-  commandType.value === 'artisan' ? 'e.g. make:model Post' : 'e.g. spatie/laravel-sluggable'
+  commandType.value === 'artisan' ? 'e.g. make:model Post' : 'e.g. vendor/package:^3.0'
 )
 
 function escapeHtml(str: string) {
@@ -67,10 +67,11 @@ async function run() {
     }
   } else {
     appendOutput(`<div class="mt-3 text-stone-500">$ composer require ${escapeHtml(trimmed)}</div>`)
-    appendOutput(`<div class="text-stone-400 italic">Fetching package info...</div>`)
 
     try {
-      const { output, errors } = await runComposerRequire(trimmed)
+      const { output, errors } = await runComposerRequire(trimmed, (line) => {
+        appendOutput(`<div class="text-stone-500 dark:text-stone-400">${escapeHtml(line)}</div>`)
+      })
 
       if (output) {
         appendOutput(`<pre class="text-stone-700 dark:text-stone-300 whitespace-pre-wrap">${escapeHtml(output)}</pre>`)

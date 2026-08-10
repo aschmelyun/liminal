@@ -4,7 +4,7 @@ import { fnv1a } from '../utils/hash'
 
 type SyncState = 'disconnected' | 'syncing-initial' | 'connected' | 'error'
 
-const SKIP_DIRS = ['vendor', 'node_modules', '.git']
+const SKIP_DIRS = ['vendor', 'node_modules', '.git', '.liminal']
 const POLL_INTERVAL = 2000
 const VFS_DEBOUNCE = 500
 

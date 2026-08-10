@@ -6,7 +6,16 @@ import { useShareUrl } from '../composables/useShareUrl'
 import { useTheme, type Theme } from '../composables/useTheme'
 import JSZip from 'jszip'
 
-const { php, booted, writeFile, readFileAsBuffer, fileExists, mkdir, collectVfsPaths } = usePhp()
+const {
+  php,
+  booted,
+  writeFile,
+  readFileAsBuffer,
+  fileExists,
+  mkdir,
+  collectVfsPaths,
+  clearComposerPackageCache,
+} = usePhp()
 const { syncState, syncStatus, syncError, syncProgress, isSupported, connect, disconnect } = useLocalSync()
 const { sharing, shareStatus, shareError, generateShareUrl } = useShareUrl()
 const { theme, setTheme } = useTheme()
@@ -199,6 +208,21 @@ async function exportFilesystem() {
 
 const dbExporting = ref(false)
 const dbExportStatus = ref('')
+const packageCacheClearing = ref(false)
+const packageCacheStatus = ref('')
+
+async function clearPackageCache() {
+  packageCacheClearing.value = true
+  packageCacheStatus.value = ''
+  try {
+    await clearComposerPackageCache()
+    packageCacheStatus.value = 'Package cache cleared. Installed packages remain available until this tab is reloaded.'
+  } catch (err: any) {
+    packageCacheStatus.value = `Could not clear package cache: ${err.message}`
+  } finally {
+    packageCacheClearing.value = false
+  }
+}
 
 function exportDatabase() {
   dbExporting.value = true
@@ -437,6 +461,28 @@ function triggerDownload(blob: Blob, filename: string) {
             </button>
           </template>
 
+        </div>
+      </section>
+
+      <!-- Composer package cache -->
+      <section>
+        <h2 class="text-sm font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400 mb-3">Composer Packages</h2>
+        <div class="bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-lg p-4 flex items-center justify-between gap-4">
+          <div>
+            <p class="text-sm font-medium text-stone-700 dark:text-stone-200">Package Cache</p>
+            <p class="text-xs text-stone-400 dark:text-stone-500 mt-0.5">
+              {{ packageCacheStatus || 'Clear downloaded package archives and the browser-side dependency lock.' }}
+            </p>
+          </div>
+          <button
+            :disabled="packageCacheClearing"
+            class="px-4 py-2 text-sm font-medium text-stone-600 dark:text-stone-300 bg-stone-100 dark:bg-stone-700 rounded-md
+                   hover:bg-stone-200 dark:hover:bg-stone-600 disabled:opacity-50 disabled:cursor-not-allowed
+                   cursor-pointer shrink-0"
+            @click="clearPackageCache"
+          >
+            {{ packageCacheClearing ? 'Clearing...' : 'Clear Cache' }}
+          </button>
         </div>
       </section>
 

@@ -1,8 +1,8 @@
 # Liminal
 
-A browser-based Laravel IDE. PHP 8.4 runs entirely in WebAssembly — no server, no installs, no uploads. Write, run, and preview Laravel applications without leaving the tab.
+A browser-based Laravel IDE. PHP 8.4 runs entirely in WebAssembly — no local installs or uploads. Write, run, and preview Laravel applications without leaving the tab.
 
-**[liminal.aschmelyun.com](https://liminal.aschmelyun.com)** — deployed as a static site on Cloudflare Pages. Feel free to try it out; everything you type and build is sandboxed entirely to your browser and never leaves your machine.
+**[liminal.aschmelyun.com](https://liminal.aschmelyun.com)** — deployed on Cloudflare Pages. Feel free to try it out; the PHP runtime and project filesystem stay sandboxed in your browser.
 
 ---
 
@@ -18,6 +18,7 @@ A browser-based Laravel IDE. PHP 8.4 runs entirely in WebAssembly — no server,
 
 Additional features:
 - **Share URLs** — encode your file diffs into a URL; anyone who opens it gets your changes applied automatically
+- **Runtime Composer packages** — install Packagist dependencies (including transitive dependencies) from the terminal and restore them across reloads
 - **Dark mode** — light, dark, or system theme, persisted across sessions
 - **Local sync** — mirror the virtual filesystem to a local folder via the File System Access API (Chrome/Edge)
 
@@ -58,20 +59,22 @@ npm run preview
 
 The build runs three steps:
 
-1. **`bundle-app.js`** — zips the Laravel project from `../liminal/app` into `public/app.zip`
+1. **`bundle-app.js`** — stages the tracked Composer runtime from `src/php/composer/` into `app/.liminal/`, then zips the Laravel project into `public/app.zip`
 2. **`vue-tsc`** — TypeScript type checking
 3. **`split-wasm.js`** — chunks WASM files >24 MB into `.wasm.part*` files with a manifest, required for Cloudflare Pages' file size limit
 
 ## How It Works
 
-On boot, the app downloads `app.zip` and extracts it into an in-memory virtual filesystem. From that point on, all PHP execution — routing, database queries, Artisan commands — happens entirely client-side via the WASM runtime. There is no backend; the production deployment on Cloudflare Pages is purely static files.
+On boot, the app downloads `app.zip` and extracts it into an in-memory virtual filesystem. From that point on, all PHP execution — routing, database queries, Artisan commands, dependency semantics, and autoloading — happens entirely client-side via the WASM runtime.
+
+The browser-side resolver reads Packagist metadata through a small, allowlisted Cloudflare Pages Function. The same function proxies package archives whose upstream redirects are not browser-CORS compatible; it does not execute PHP or receive project files. Vite exposes the same proxy during local development and previews. Downloaded archives and the dependency lock are cached in IndexedDB so packages can be restored without a network request after a reload.
 
 [`SharedArrayBuffer`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/SharedArrayBuffer) is required by the WASM runtime and needs `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: credentialless` headers, which are configured in both the Vite dev server and `public/_headers` for Cloudflare Pages.
 
 ## Limitations
 
-- No network access from PHP (no `file_get_contents` over HTTP, no `curl`, no Composer)
-- The `vendor/` directory is pre-bundled in `app.zip` and cannot be modified
+- No network access from PHP (`file_get_contents` over HTTP and `curl` are unavailable); the browser-side Composer PoC supports `composer require` only
+- Composer dependency resolution is intentionally greedy: it does not backtrack, run package scripts/plugins, or implement `update`/`remove`
 - SQLite only — no MySQL/Postgres
 - Performance is slower than native PHP, especially on first boot
 
