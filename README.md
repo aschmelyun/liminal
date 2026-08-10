@@ -12,8 +12,8 @@ A browser-based Laravel IDE. PHP 8.4 runs entirely in WebAssembly — no server,
 |------|-------------|
 | **Preview** | Navigate routes and see rendered HTML output. Tailwind CSS v4 is injected automatically. |
 | **Code** | Browse and edit project files with syntax highlighting (PHP, Blade, JS/TS, JSON, CSS). |
-| **Terminal** | Run Artisan commands directly in the browser with command history. |
-| **Agent** | OpenAI-powered assistant that reads/writes files and runs Artisan to build features. |
+| **Terminal** | Run Artisan and Composer commands directly in the browser with command history. |
+| **Database** | Browse SQLite tables and rows, and run raw SQL. |
 | **Tools** | Import from GitHub, export as `.zip`, sync to a local folder, and configure settings. |
 
 Additional features:

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Bot, Code2, Database, Github, Monitor, Moon, Settings, SquareTerminal, Sun } from 'lucide-vue-next'
+import { Code2, Database, Github, Monitor, Moon, Settings, SquareTerminal, Sun } from 'lucide-vue-next'
 import { useTheme } from '../composables/useTheme'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -16,7 +16,6 @@ const TABS = [
   { value: 'code', label: 'Code', icon: Code2 },
   { value: 'terminal', label: 'Terminal', icon: SquareTerminal },
   { value: 'database', label: 'Database', icon: Database },
-  { value: 'agent', label: 'Agent', icon: Bot },
 ] as const
 </script>
 

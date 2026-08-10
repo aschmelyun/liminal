@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Liminal is a **browser-based Laravel IDE** that runs PHP 8.4 entirely in WebAssembly. It provides a code editor (CodeMirror 6), site preview, Artisan terminal, SQLite browser, and an AI agent with tool-calling capabilities — all running client-side with no backend server.
+Liminal is a **browser-based Laravel IDE** that runs PHP 8.4 entirely in WebAssembly. It provides a code editor (CodeMirror 6), site preview, Artisan/Composer terminal, and a SQLite browser — all running client-side.
+
+The only server-side component is `functions/api/dist.ts`, a Cloudflare Pages Function that proxies Packagist metadata and package archives (their hosts do not send usable CORS headers).
 
 ## Build Commands
 
@@ -31,7 +33,7 @@ PHP 8.4 runs in-browser via `@php-wasm/web-8-4`. On boot, the app downloads `app
 - **`usePhp.ts`** — Singleton managing the PHP WASM runtime. Handles the boot sequence, VFS operations (read/write/list files at `/app/` prefix), PHP code execution, Laravel HTTP routing (`navigateTo`), and Artisan commands (`runArtisan`). `query()` runs a PHP snippet and parses its stdout as JSON — the standard way to pull structured data out of the runtime. `bootLog` is the rolling tail of files written during boot, streamed by the loading screen.
 - **`useWorkspace.ts`** — Cross-panel state: the active file path (sidebar highlight + status bar) and the file-tree collapse token.
 - **`useDatabase.ts`** — SQLite access over PDO: table list with row counts, and `runSql()`. SQL is base64-encoded into the PHP snippet so nothing needs escaping.
-- **`useAgentSettings.ts`** — OpenAI API key and model, persisted to localStorage and shared by AgentView and the settings dialog.
+- **`useComposer.ts`** — runtime `composer require`: constraint solving via the real `composer/semver` (run inside the WASM PHP), archive download through `/api/dist`, extraction into the VFS, and an IndexedDB cache of package zips plus a lock so installs survive a reload.
 - **`useGlyphs.ts`** — Matrix-rain animation for the loading screen.
 
 ### Shell Layout (App.vue)
@@ -43,7 +45,6 @@ Each view owns a single `h-9` contextual toolbar as its first child — that's t
 - **CodeView** — CodeMirror 6 editor. Language detection by extension (PHP, Blade, HTML, JS, JSON, CSS, TS). Saves via Cmd/Ctrl+S. A `chromeTheme` layered over `oneDark` binds the editor background, gutters, selection and caret to the design tokens.
 - **TerminalView** — Artisan and Composer command runner with history (up/down arrows). Output is typed line objects, not HTML strings.
 - **DatabaseView** — SQLite browser: table list, row viewer (capped at 500 rows), and a raw SQL bar.
-- **AgentView** — OpenAI chat integration with SSE streaming and 4 tool functions: `read_file`, `write_file`, `list_files`, `run_artisan`.
 
 ### WASM Chunk Reassembly
 

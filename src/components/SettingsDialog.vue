@@ -3,7 +3,6 @@ import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { X } from 'lucide-vue-next'
 import { usePhp } from '../composables/usePhp'
 import { useTheme, type Theme } from '../composables/useTheme'
-import { MODEL_OPTIONS, useAgentSettings } from '../composables/useAgentSettings'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
@@ -13,7 +12,6 @@ const emit = defineEmits<{ close: [] }>()
 
 const { booted, query, writeFile, fileExists, mkdir } = usePhp()
 const { theme, setTheme } = useTheme()
-const { apiKey, model } = useAgentSettings()
 
 const THEMES: { value: Theme; label: string }[] = [
   { value: 'light', label: 'Light' },
@@ -184,33 +182,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                   : 'text-muted-foreground hover:text-foreground'"
                 @click="setTheme(option.value)"
               >{{ option.label }}</button>
-            </div>
-          </section>
-
-          <Separator />
-
-          <section>
-            <h3 class="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Agent</h3>
-            <p class="mt-1.5 text-xs leading-5 text-muted-foreground">
-              The agent calls the OpenAI API straight from your browser. The key is stored in this browser's
-              local storage and never sent anywhere else.
-            </p>
-            <div class="mt-2 flex flex-col gap-2 sm:flex-row">
-              <Input
-                v-model="apiKey"
-                type="password"
-                autocomplete="off"
-                placeholder="sk-…"
-                aria-label="OpenAI API key"
-                class="h-8 flex-1 font-mono text-xs"
-              />
-              <select
-                v-model="model"
-                aria-label="Model"
-                class="h-8 rounded-md border border-input bg-background px-2 font-mono text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <option v-for="option in MODEL_OPTIONS" :key="option" :value="option">{{ option }}</option>
-              </select>
             </div>
           </section>
 

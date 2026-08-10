@@ -135,36 +135,6 @@
     }
 }
 
-/*
- * Markdown rendered from the agent stream. Lives here (not in a component)
- * because the content is injected as an HTML string via v-html.
- */
-.md-body {
-    line-height: 1.7;
-    word-break: break-word;
-}
-
-.md-body pre {
-    background: var(--muted);
-    border: 1px solid var(--border);
-    color: var(--foreground);
-    padding: 0.75rem;
-    border-radius: 0.5rem;
-    overflow-x: auto;
-    white-space: pre;
-    margin: 0.625rem 0;
-    font-size: 0.8125rem;
-    line-height: 1.6;
-}
-
-.md-body code:not(pre code) {
-    background: var(--muted);
-    border: 1px solid var(--border);
-    padding: 0.0625rem 0.3125rem;
-    border-radius: 0.25rem;
-    font-size: 0.8125rem;
-}
-
 /* Extra bottom padding for Safari's floating address bar */
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
     @media (max-width: 767px) {

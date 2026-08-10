@@ -10,7 +10,6 @@ import SiteView from './components/SiteView.vue'
 import CodeView from './components/CodeView.vue'
 import TerminalView from './components/TerminalView.vue'
 import DatabaseView from './components/DatabaseView.vue'
-import AgentView from './components/AgentView.vue'
 import WorkspaceSidebar from './components/WorkspaceSidebar.vue'
 import SandboxPanel from './components/SandboxPanel.vue'
 import SettingsDialog from './components/SettingsDialog.vue'
@@ -82,7 +81,6 @@ function togglePanel() {
         <CodeView ref="codeViewRef" v-show="activeTab === 'code'" />
         <TerminalView v-show="activeTab === 'terminal'" />
         <DatabaseView v-show="activeTab === 'database'" />
-        <AgentView v-show="activeTab === 'agent'" @open-settings="settingsOpen = true" />
       </main>
 
       <SandboxPanel v-if="panelOpen" />
