@@ -23,7 +23,7 @@ const TABS = [
 <template>
   <header class="flex h-12 shrink-0 items-center gap-2 border-b bg-panel pl-3 pr-2">
     <div class="flex shrink-0 items-center gap-2.5">
-      <div class="grid size-6 shrink-0 place-items-center rounded bg-brand font-mono text-[11px] font-bold text-brand-foreground">L/</div>
+      <div class="grid size-6 shrink-0 place-items-center rounded bg-brand text-2xl text-brand-foreground" style="font-family: 'Jacquard 24', serif;">L</div>
       <span class="hidden text-sm font-semibold tracking-tight sm:inline">liminal</span>
     </div>
 

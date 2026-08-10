@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { usePhp } from './usePhp'
+import { toBase64 } from '../utils/base64'
 
 export const DB_PATH = '/app/database/database.sqlite'
 
@@ -23,13 +24,6 @@ const tables = ref<DbTable[]>([])
 const exists = ref(false)
 const loading = ref(false)
 const error = ref('')
-
-function toBase64(value: string): string {
-  const bytes = new TextEncoder().encode(value)
-  let binary = ''
-  for (const byte of bytes) binary += String.fromCharCode(byte)
-  return btoa(binary)
-}
 
 /** Shared PHP preamble: open the sandbox database or bail out with a JSON error. */
 const OPEN_DB = `

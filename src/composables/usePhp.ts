@@ -4,6 +4,7 @@ import { getPHPLoaderModule } from '@php-wasm/web-8-4'
 import JSZip from 'jszip'
 import { fnv1a } from '../utils/hash'
 import { toTerminalResult } from '../utils/terminal'
+import { toBase64 } from '../utils/base64'
 import {
   restoreComposerPackages,
   runComposerRequire as composerRequire,
@@ -206,7 +207,14 @@ export function usePhp() {
 
   async function runArtisan(command: string): Promise<{ output: string; errors: string }> {
     if (!php.value) return { output: '', errors: '' }
-    const safeCmd = command.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+    /*
+     * Artisan::call() with a bare string routes through Symfony's StringInput,
+     * whose tokenizer runs stripcslashes() over every token. That eats the
+     * namespace separators in `--provider="Laravel\Pennant\PennantServiceProvider"`
+     * and in arguments like `App\Models\Post`, so the value never matches the
+     * key it is looked up under. Doubling them first survives tokenization.
+     */
+    const safeCmd = toBase64(command.replace(/\\/g, '\\\\'))
     const result = await php.value.run({
       code: `<?php
         ${CONSOLE_ENV}
@@ -215,7 +223,7 @@ export function usePhp() {
           $app = require_once '/app/bootstrap/app.php';
           $kernel = $app->make(Illuminate\\Contracts\\Console\\Kernel::class);
           $kernel->bootstrap();
-          $status = Illuminate\\Support\\Facades\\Artisan::call('${safeCmd}');
+          $status = Illuminate\\Support\\Facades\\Artisan::call(base64_decode('${safeCmd}'));
           echo Illuminate\\Support\\Facades\\Artisan::output();
         } catch (\\Throwable $e) {
           echo get_class($e) . ': ' . $e->getMessage() . "\\n";
