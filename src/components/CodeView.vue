@@ -2,7 +2,7 @@
 import { ref, onMounted, watch } from 'vue'
 import { usePhp } from '../composables/usePhp'
 import { useTheme } from '../composables/useTheme'
-import FileTree, { type TreeNode } from './FileTree.vue'
+import { Button } from '@/components/ui/button'
 import { EditorView, basicSetup } from 'codemirror'
 import { EditorState, Compartment } from '@codemirror/state'
 import { keymap } from '@codemirror/view'
@@ -13,12 +13,11 @@ import { javascript } from '@codemirror/lang-javascript'
 import { json } from '@codemirror/lang-json'
 import { css } from '@codemirror/lang-css'
 
-const { php, booted, vfsVersion, readFile, writeFile, collectVfsPaths } = usePhp()
+const { php, booted, readFile, writeFile, fileExists } = usePhp()
 const { isDark } = useTheme()
 
 const editorThemeCompartment = new Compartment()
 
-const tree = ref<TreeNode>({})
 const currentFilePath = ref<string | null>(null)
 const fileViewerPath = ref('Select a file')
 const saveDisabled = ref(true)
@@ -48,32 +47,6 @@ function getLangExtension(filePath: string) {
   if (name.endsWith('.blade.php')) return EXT_LANG['blade']!()
   const ext = name.split('.').pop()!.toLowerCase()
   return EXT_LANG[ext]?.() ?? []
-}
-
-function buildTree(filePaths: string[]): TreeNode {
-  const root: TreeNode = {}
-  for (const fp of filePaths) {
-    const rel = fp.startsWith('/app/') ? fp.slice(5) : fp
-    const parts = rel.split('/')
-    let node: TreeNode = root
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i]!
-      if (i === parts.length - 1) {
-        node[part] = null
-      } else {
-        if (!node[part] || typeof node[part] !== 'object') {
-          node[part] = {}
-        }
-        node = node[part] as TreeNode
-      }
-    }
-  }
-  return root
-}
-
-function refreshFileTree() {
-  const allPaths = collectVfsPaths('/app')
-  tree.value = buildTree(allPaths)
 }
 
 function createEditor(content: string, langExt: any) {
@@ -168,52 +141,33 @@ watch(isDark, (dark) => {
   })
 })
 
+function openDefaultFile() {
+  if (currentFilePath.value || !php.value) return
+  const preferred = '/app/resources/views/welcome.blade.php'
+  if (fileExists(preferred)) {
+    openFile(preferred)
+  }
+}
+
 watch(booted, (val) => {
-  if (val) refreshFileTree()
+  if (val) openDefaultFile()
 })
 
-watch(vfsVersion, () => {
-  if (booted.value) refreshFileTree()
-})
-
-onMounted(() => {
-  if (booted.value) refreshFileTree()
-})
+onMounted(openDefaultFile)
 
 // Expose for agent to call
-defineExpose({ openFile, refreshFileTree })
+defineExpose({ openFile })
 </script>
 
 <template>
-  <div class="flex-1 flex flex-col md:flex-row min-h-0">
-    <!-- File tree -->
-    <aside class="order-2 md:order-none h-44 md:h-auto w-full md:w-72 border-t md:border-t-0 md:border-r border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 overflow-y-auto shrink-0 flex flex-col">
-      <div class="px-3 py-2 border-b border-stone-100 dark:border-stone-800 shrink-0">
-        <h2 class="text-xs font-semibold text-stone-400 dark:text-stone-500 uppercase tracking-wider">Files</h2>
-      </div>
-      <div class="py-1 text-sm font-mono text-stone-600 dark:text-stone-300 flex-1 overflow-y-auto">
-        <FileTree
-          v-if="Object.keys(tree).length > 0"
-          :tree="tree"
-          @open-file="openFile"
-        />
-        <div v-else class="px-3 py-8 text-center text-xs text-stone-400 dark:text-stone-500">Waiting for boot...</div>
-      </div>
-    </aside>
-    <!-- File editor -->
-    <div class="flex-1 flex flex-col min-w-0 min-h-0 order-1 md:order-none">
-      <div class="px-4 py-2 border-b border-stone-100 dark:border-stone-800 bg-white dark:bg-stone-900 shrink-0 flex items-center justify-between">
+  <div class="flex min-h-0 flex-1 flex-col">
+    <div class="flex shrink-0 items-center justify-between border-b bg-background px-3 py-2">
         <span class="text-xs font-mono text-stone-500 dark:text-stone-400">{{ fileViewerPath }}</span>
         <div class="flex items-center gap-2">
           <span v-show="saveStatusVisible" class="text-xs text-stone-400 dark:text-stone-500">{{ saveStatusText }}</span>
-          <button
-            :disabled="saveDisabled"
-            class="px-2.5 py-1 text-xs font-medium text-white bg-stone-700 dark:bg-stone-600 rounded-md hover:bg-stone-800 dark:hover:bg-stone-500 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
-            @click="saveFile"
-          >Save</button>
+          <Button size="sm" :disabled="saveDisabled" @click="saveFile">Save</Button>
         </div>
-      </div>
-      <div ref="editorContainer" class="editor-container flex-1 min-h-0 overflow-hidden"></div>
     </div>
+    <div ref="editorContainer" class="editor-container min-h-0 flex-1 overflow-hidden bg-background"></div>
   </div>
 </template>

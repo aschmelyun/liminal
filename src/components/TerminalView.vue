@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, nextTick } from 'vue'
 import { usePhp } from '../composables/usePhp'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 const { runArtisan, runComposerRequire } = usePhp()
 
@@ -114,19 +116,19 @@ function onKeydown(e: KeyboardEvent) {
 </script>
 
 <template>
-  <div class="flex-1 flex flex-col min-h-0">
-    <div ref="outputEl" class="flex-1 overflow-y-auto p-4 font-mono text-sm">
+  <div class="flex min-h-0 flex-1 flex-col bg-zinc-950 text-xs text-zinc-300">
+    <div ref="outputEl" class="flex-1 overflow-y-auto p-4 font-mono leading-6">
       <div v-for="(entry, i) in outputEntries" :key="i" v-html="entry.html"></div>
     </div>
-    <div class="panel-terminal-input border-t border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 px-4 pt-3 pb-8 md:py-3 shrink-0 flex items-center gap-2">
+    <div class="panel-terminal-input flex shrink-0 items-center gap-2 border-t border-zinc-800 bg-zinc-950 px-4 pb-8 pt-3 md:py-3">
       <select
         v-model="commandType"
-        class="text-xs font-mono text-stone-500 dark:text-stone-400 bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-md px-1.5 py-1 outline-none focus:border-stone-400 dark:focus:border-stone-500 shrink-0 cursor-pointer"
+        class="shrink-0 rounded-md border border-zinc-700 bg-zinc-900 px-1.5 py-1 font-mono text-xs text-zinc-400 outline-none focus:border-zinc-500"
       >
         <option value="artisan">php artisan</option>
         <option value="composer">composer require</option>
       </select>
-      <input
+      <Input
         v-model="inputValue"
         type="text"
         spellcheck="false"
@@ -134,14 +136,14 @@ function onKeydown(e: KeyboardEvent) {
         autocorrect="off"
         :disabled="running"
         :placeholder="placeholder"
-        class="flex-1 px-2 py-1 text-sm font-mono bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-md text-stone-700 dark:text-stone-200 outline-none focus:border-stone-400 dark:focus:border-stone-500 focus:bg-white dark:focus:bg-stone-700 disabled:opacity-50 disabled:cursor-not-allowed"
+        class="h-8 flex-1 border-zinc-700 bg-zinc-900 font-mono text-xs text-zinc-200 placeholder:text-zinc-600 focus-visible:ring-zinc-500"
         @keydown="onKeydown"
       />
-      <button
+      <Button
+        size="sm"
         :disabled="running"
-        class="px-2.5 py-1 text-xs font-medium text-white bg-stone-700 dark:bg-stone-600 rounded-md hover:bg-stone-800 dark:hover:bg-stone-500 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
         @click="run"
-      >Run</button>
+      >Run</Button>
     </div>
   </div>
 </template>

@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { usePhp } from '../composables/usePhp'
+import { ExternalLink } from 'lucide-vue-next'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 const { navigateTo, booted } = usePhp()
 
@@ -42,32 +45,47 @@ async function go() {
 function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Enter') go()
 }
+
+defineExpose({ refresh: go })
 </script>
 
 <template>
-  <div class="flex-1 flex flex-col min-h-0">
-    <div class="px-4 py-2 border-b border-stone-100 dark:border-stone-800 bg-white dark:bg-stone-900 shrink-0 flex items-center gap-2">
-      <label class="text-xs font-semibold text-stone-400 dark:text-stone-500 uppercase tracking-wider shrink-0">Route</label>
-      <div class="flex items-center flex-1 gap-1.5">
-        <input
+  <div class="min-h-0 flex-1 bg-muted/30 p-3">
+    <div class="flex h-full min-h-[300px] flex-col overflow-hidden rounded-lg border bg-muted/40">
+      <div class="flex h-10 shrink-0 items-center gap-2 border-b bg-background px-3">
+        <div class="size-2 rounded-full bg-muted-foreground/30" />
+        <div class="size-2 rounded-full bg-muted-foreground/30" />
+        <div class="size-2 rounded-full bg-muted-foreground/30" />
+        <div class="ml-2 flex min-w-0 flex-1 items-center gap-1.5">
+          <Input
           v-model="routeInput"
           type="text"
           spellcheck="false"
-          class="flex-1 px-2 py-1 text-sm font-mono bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-md text-stone-700 dark:text-stone-200 outline-none focus:border-stone-400 dark:focus:border-stone-500 focus:bg-white dark:focus:bg-stone-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          class="h-7 min-w-0 flex-1 bg-muted font-mono text-[10px]"
           :disabled="navigating"
           @keydown="onKeydown"
-        />
-        <button
+          />
+          <Button
+          variant="ghost"
+          size="icon"
+          class="size-7"
+          aria-label="Open preview in a new tab"
           :disabled="navigating"
-          class="px-2.5 py-1 text-xs font-medium text-white bg-stone-700 dark:bg-stone-600 rounded-md hover:bg-stone-800 dark:hover:bg-stone-500 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
           @click="go"
-        >Go</button>
+          >
+            <ExternalLink class="size-3.5" />
+          </Button>
+        </div>
+        <Button
+          size="sm"
+          :disabled="navigating"
+          @click="go"
+        >{{ navigating ? 'Loading' : 'Run' }}</Button>
       </div>
-    </div>
-    <div class="flex-1 p-4 bg-stone-100 dark:bg-stone-950 min-h-0">
       <iframe
         :srcdoc="srcdoc"
-        class="w-full h-full bg-white rounded-lg border border-stone-200 dark:border-stone-700 shadow-xs"
+        title="Laravel application preview"
+        class="min-h-0 w-full flex-1 border-0 bg-white"
       ></iframe>
     </div>
   </div>
