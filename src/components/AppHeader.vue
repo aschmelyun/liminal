@@ -23,7 +23,16 @@ const TABS = [
 <template>
   <header class="flex h-12 shrink-0 items-center gap-2 border-b bg-panel pl-3 pr-2">
     <div class="flex shrink-0 items-center gap-2.5">
-      <div class="grid size-6 shrink-0 place-items-center rounded bg-brand text-2xl text-brand-foreground" style="font-family: 'Jacquard 24', serif;">L</div>
+      <!--
+        leading-none is load-bearing: Jacquard 24's cap sits at exactly 0.5em
+        of a line-height:1 box, so the glyph centres itself. Any other
+        line-height positions it inside a taller line box and it drifts.
+      -->
+      <div
+        class="grid size-6 shrink-0 place-items-center rounded bg-brand text-2xl leading-none text-brand-foreground"
+        style="font-family: 'Jacquard 24', serif;"
+        aria-hidden="true"
+      >L</div>
       <span class="hidden text-sm font-semibold tracking-tight sm:inline">liminal</span>
     </div>
 

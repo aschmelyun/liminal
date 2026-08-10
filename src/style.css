@@ -26,16 +26,26 @@
     --muted-foreground: oklch(0.553 0.013 58.071);
     --accent: oklch(0.97 0.001 106.424);
     --accent-foreground: oklch(0.216 0.006 56.043);
-    --border: oklch(0.923 0.003 48.717);
-    --input: oklch(0.923 0.003 48.717);
+    /*
+     * Separators are hairlines, not rules. They sit just off the surface they
+     * divide so structure reads from the panel/background step first and the
+     * line only confirms it. --input stays a touch stronger: a form field has
+     * to advertise itself, a seam does not.
+     */
+    --border: oklch(0.94 0.002 48.717);
+    --input: oklch(0.915 0.003 48.717);
 
     /* Semantic state — used for output, never for decoration */
     --destructive: oklch(0.577 0.245 27.325);
     --success: oklch(0.63 0.15 162.48);
 
-    /* Brand accent. Reserved for identity, progress and focus. */
+    /*
+     * Brand accent. Reserved for identity, progress and focus.
+     * The mark is always white on red, in both themes — brand-foreground is
+     * not a theme-inverting pair like the other *-foreground tokens.
+     */
     --brand: oklch(0.645 0.207 16.44);
-    --brand-foreground: oklch(0.985 0.001 106.423);
+    --brand-foreground: oklch(1 0 0);
     --ring: oklch(0.645 0.207 16.44);
 }
 
@@ -55,14 +65,14 @@
     --muted-foreground: oklch(0.709 0.01 56.259);
     --accent: oklch(0.279 0.007 34.298);
     --accent-foreground: oklch(0.985 0.001 106.423);
-    --border: oklch(0.315 0.008 56);
-    --input: oklch(0.315 0.008 56);
+    --border: oklch(0.27 0.006 56);
+    --input: oklch(0.32 0.008 56);
 
     --destructive: oklch(0.704 0.191 22.216);
     --success: oklch(0.696 0.17 162.48);
 
     --brand: oklch(0.68 0.19 16.44);
-    --brand-foreground: oklch(0.16 0.004 49.25);
+    --brand-foreground: oklch(1 0 0);
     --ring: oklch(0.68 0.19 16.44);
 }
 
@@ -89,6 +99,21 @@
     --color-success: var(--success);
     --color-brand: var(--brand);
     --color-brand-foreground: var(--brand-foreground);
+}
+
+/*
+ * Tailwind v4 defaults border-color to currentColor, so a bare `border-b`
+ * paints in the text colour. Point the default at the token instead — this is
+ * what makes every seam in the app a hairline rather than a hard rule.
+ */
+@layer base {
+    *,
+    ::after,
+    ::before,
+    ::backdrop,
+    ::file-selector-button {
+        border-color: var(--border);
+    }
 }
 
 /* CodeMirror fills its container */
